@@ -46,7 +46,8 @@ if [ -d "/Applications/Übersicht.app" ] || [ -d "$UB_WIDGETS" ]; then
     "$ROOT/widgets/apply-grid.widget/index.jsx" \
     > "$UB_WIDGETS/apply-grid.widget/index.jsx"
   say "==> Übersicht widget installed"
-  if ! pgrep -qx "Übersicht" 2>/dev/null; then
+  # -x fails on the non-ASCII process name; match the bundle path instead.
+  if ! pgrep -qf "Übersicht.app" 2>/dev/null; then
     say "    Übersicht isn't running yet — open it once (it lives in the menu"
     say "    bar) and the widget appears on your desktop."
   else

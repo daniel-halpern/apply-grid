@@ -137,18 +137,18 @@ def cmd_grid(args) -> None:
     state = load_state()
     if args.html:
         from . import render_html
-        print(render_html.render(state, weeks=args.weeks or 26, mode=args.mode))
+        print(render_html.render(state, weeks=args.weeks or 26, mode=getattr(args, "mode", None)))
         return
     if args.compact:
         print(render_ansi.render_compact(state, weeks=args.weeks or 20,
-                                         mode=args.mode))
+                                         mode=getattr(args, "mode", None)))
         return
-    print(render_ansi.render(state, weeks=args.weeks, mode=args.mode))
+    print(render_ansi.render(state, weeks=args.weeks, mode=getattr(args, "mode", None)))
 
 
 def cmd_stats(args) -> None:
     state = load_state()
-    sch = palette.scheme(args.mode)
+    sch = palette.scheme(getattr(args, "mode", None))
     ink, muted = palette.fg(sch["ink"]), palette.fg(sch["muted"])
     r = palette.RESET
 
@@ -221,7 +221,7 @@ def cmd_stale(args) -> None:
     if not rows:
         print("nothing owed a follow-up — pipeline is current")
         return
-    sch = palette.scheme(args.mode)
+    sch = palette.scheme(getattr(args, "mode", None))
     muted, r = palette.fg(sch["muted"]), palette.RESET
     for app in rows:
         quiet = app.days_since_last_event(state.today)
@@ -235,7 +235,7 @@ def cmd_list(args) -> None:
     apps = sorted(state.apps.values(), key=lambda a: a.applied_on, reverse=True)
     if not args.all:
         apps = [a for a in apps if a.is_live] or apps
-    sch = palette.scheme(args.mode)
+    sch = palette.scheme(getattr(args, "mode", None))
     muted, r = palette.fg(sch["muted"]), palette.RESET
     for app in apps[:args.limit]:
         status = app.terminal or app.stage
@@ -280,10 +280,21 @@ def _maybe_sync(args) -> None:
         pass  # never let a sync problem block logging
 
 
+def _add_mode(parser: argparse.ArgumentParser) -> None:
+    """Allow --mode either before or after the subcommand.
+
+    argparse.SUPPRESS is load-bearing: an ordinary default here would clobber a
+    --mode already given at the top level.
+    """
+    parser.add_argument("--mode", choices=("dark", "light"),
+                        default=argparse.SUPPRESS,
+                        help="color mode (default dark)")
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="ja", description="Apply Grid — job application effort tracker")
-    p.add_argument("--mode", choices=("dark", "light"),
+    p.add_argument("--mode", choices=("dark", "light"), default=None,
                    help="color mode (default dark)")
     sub = p.add_subparsers(dest="cmd")
 
@@ -311,18 +322,22 @@ def build_parser() -> argparse.ArgumentParser:
     g.add_argument("--weeks", type=int)
     g.add_argument("--compact", action="store_true")
     g.add_argument("--html", action="store_true")
+    _add_mode(g)
     g.set_defaults(func=cmd_grid)
 
     s = sub.add_parser("stats", help="funnel, streaks, channels, lag")
+    _add_mode(s)
     s.set_defaults(func=cmd_stats)
 
     st = sub.add_parser("stale", help="applications owed a follow-up")
     st.add_argument("--days", type=int)
+    _add_mode(st)
     st.set_defaults(func=cmd_stale)
 
     ls = sub.add_parser("list", help="applications")
     ls.add_argument("--all", action="store_true", help="include closed ones")
     ls.add_argument("--limit", type=int, default=40)
+    _add_mode(ls)
     ls.set_defaults(func=cmd_list)
 
     sy = sub.add_parser("sync", help="push aggregates to the phone's gist")
@@ -344,7 +359,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if not getattr(args, "func", None):
         # Bare `ja` shows the thing you came to see.
-        print(render_ansi.render(load_state(), mode=args.mode))
+        print(render_ansi.render(load_state(), mode=getattr(args, "mode", None)))
         return 0
     args.func(args)
     return 0
