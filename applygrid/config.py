@@ -17,6 +17,10 @@ DEFAULTS = {
     "weekly_target_multiplier": 4,
     "stale_after_days": 10,
     "give_up_after_days": 45,
+    # "today": today is the bottom-right cell and no cell is ever
+    # blank. "sunday": GitHub's layout, which leaves a ragged notch
+    # at the bottom right for the rest of the current week.
+    "week_anchor": "today",
     "weights": {
         "application_tailored": 3,
         "application_quick": 1,

@@ -358,7 +358,9 @@ def cmd_phone_script(args) -> None:
     raw = (f"https://gist.githubusercontent.com/{user}/{gist_id}"
            f"/raw/{publish.GIST_FILENAME}")
     src = (config.REPO_ROOT / "widgets" / "scriptable" / "apply-grid.js").read_text()
-    sys.stdout.write(src.replace("__APPLYGRID_GIST_RAW__", raw))
+    src = src.replace("__APPLYGRID_GIST_RAW__", raw)
+    src = src.replace("__APPLYGRID_GIST_ID__", gist_id)
+    sys.stdout.write(src)
 
 
 def cmd_menubar(args) -> None:
@@ -367,14 +369,23 @@ def cmd_menubar(args) -> None:
 
 
 def _maybe_sync(args) -> None:
-    """Push to the phone after a log, unless told not to."""
+    """Push to the phone after a log, unless told not to.
+
+    A sync problem must never block logging -- but it must not be invisible
+    either. Silently swallowing it is how the phone widget sat at zero while
+    every Mac surface showed the right numbers.
+    """
     if getattr(args, "no_sync", False):
         return
+    from . import publish
     try:
-        from . import publish
         publish.sync(load_state(), verbose=False, quiet_fail=True)
-    except Exception:
-        pass  # never let a sync problem block logging
+    except Exception as exc:  # noqa: BLE001 - logging must still succeed
+        publish._record(False, f"{type(exc).__name__}: {exc}")
+    status = publish.last_status()
+    if status and not status.get("ok"):
+        print(f"  note: phone sync failed — {status.get('detail', '?')}")
+        print("        Mac surfaces are unaffected; retry with:  ja sync")
 
 
 def _add_mode(parser: argparse.ArgumentParser) -> None:

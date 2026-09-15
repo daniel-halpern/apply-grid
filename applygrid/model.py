@@ -255,17 +255,40 @@ class Cell:
     level: int
 
 
-def grid(state: State, weeks: int = 53) -> list[list[Cell | None]]:
-    """Columns of 7 days, Sunday at the top, current week last.
+def grid(state: State, weeks: int = 53,
+         anchor: str | None = None) -> list[list[Cell | None]]:
+    """Columns of 7 days, oldest column first.
 
-    Future days in the current week come back as None so the trailing column
-    renders as blank space instead of empty boxes.
+    Two layouts:
+
+    "today" (default) -- the last cell is today, so the grid is a solid
+    rectangle with no blanks anywhere. Rows still each hold one weekday, just
+    rotated so today's weekday sits on the bottom row.
+
+    "sunday" -- GitHub's layout: row 0 is Sunday and the rest of the current
+    week comes back as None. Faithful to the original, but it leaves a ragged
+    notch at the bottom right.
     """
+    anchor = anchor or state.cfg.get("week_anchor", "today")
+
+    if anchor == "today":
+        total = 7 * weeks
+        start = state.today - timedelta(days=total - 1)
+        columns: list[list[Cell | None]] = []
+        for col in range(weeks):
+            column: list[Cell | None] = []
+            for row in range(7):
+                day = start + timedelta(days=7 * col + row)
+                pts = state.points_on(day)
+                column.append(Cell(day, pts, bucket(pts, state.target)))
+            columns.append(column)
+        return columns
+
     last_col = _week_start(state.today)
     first_col = last_col - timedelta(days=7 * (weeks - 1))
-    columns: list[list[Cell | None]] = []
+    columns = []
     for col in range(weeks):
-        column: list[Cell | None] = []
+        column = []
         for row in range(7):
             day = first_col + timedelta(days=7 * col + row)
             if day > state.today:
@@ -275,6 +298,19 @@ def grid(state: State, weeks: int = 53) -> list[list[Cell | None]]:
                 column.append(Cell(day, pts, bucket(pts, state.target)))
         columns.append(column)
     return columns
+
+
+def weekday_labels(columns: list[list[Cell | None]],
+                   every: int = 2) -> list[str]:
+    """Row labels read off the grid itself, so they follow the rotation."""
+    out = []
+    for row in range(7):
+        cell = next((col[row] for col in columns if col[row] is not None), None)
+        if cell is None or row % every:
+            out.append("")
+        else:
+            out.append(cell.day.strftime("%a"))
+    return out
 
 
 def month_labels(columns: list[list[Cell | None]]) -> dict[int, str]:

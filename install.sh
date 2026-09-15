@@ -77,6 +77,9 @@ cat > "$AGENT" <<PLIST
   <dict>
     <key>PYTHONPATH</key><string>$ROOT</string>
     <key>APPLYGRID_MODE</key><string>$MODE</string>
+    <!-- launchd's default PATH excludes Homebrew, so gh would not be found
+         and the phone sync would fail on anything logged from the menu bar. -->
+    <key>PATH</key><string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
   </dict>
   <key>WorkingDirectory</key><string>$ROOT</string>
   <key>RunAtLoad</key><true/>

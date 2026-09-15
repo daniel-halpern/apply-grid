@@ -9,9 +9,10 @@ no URLs, no notes ever leave the machine.
 from __future__ import annotations
 
 import json
+import shutil
 import subprocess
 import tempfile
-from datetime import timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from . import config
@@ -32,6 +33,10 @@ def payload(state: State) -> dict:
         "v": 1,
         "start": start.isoformat(),
         "today": state.today.isoformat(),
+        # The phone must lay the grid out exactly like the Mac, so the layout
+        # choice travels with the data rather than being duplicated as a
+        # constant on both sides.
+        "anchor": state.cfg.get("week_anchor", "today"),
         "levels": levels,
         "target": state.target,
         "weekly_target": state.weekly_target,
@@ -60,11 +65,51 @@ def assert_no_pii(blob: dict) -> None:
             raise SystemExit(f"refusing to sync: payload contains {key!r}")
 
 
+# launchd gives the menu bar app a minimal PATH (/usr/bin:/bin:/usr/sbin:/sbin),
+# which does not include Homebrew -- so a bare "gh" was not found and the sync
+# failed silently for anything logged from the menu bar. Resolve it explicitly.
+GH_SEARCH_PATH = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
+
+
+def gh_binary() -> str:
+    found = shutil.which("gh") or shutil.which("gh", path=GH_SEARCH_PATH)
+    if not found:
+        raise RuntimeError(
+            "the `gh` CLI was not found. The menu bar app runs with a minimal "
+            "PATH, so gh must be at one of: " + GH_SEARCH_PATH)
+    return found
+
+
 def _gh(*args: str) -> str:
-    proc = subprocess.run(("gh",) + args, capture_output=True, text=True)
+    proc = subprocess.run((gh_binary(),) + args, capture_output=True, text=True)
     if proc.returncode != 0:
         raise RuntimeError(proc.stderr.strip() or "gh failed")
     return proc.stdout.strip()
+
+
+def status_path() -> Path:
+    """Last sync outcome, so a failure can be surfaced instead of swallowed."""
+    return config.data_path().parent / "last-sync.json"
+
+
+def _record(ok: bool, detail: str = "") -> None:
+    try:
+        path = status_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({
+            "ok": ok,
+            "at": datetime.now().astimezone().replace(microsecond=0).isoformat(),
+            "detail": detail,
+        }, indent=2) + "\n")
+    except OSError:
+        pass
+
+
+def last_status() -> dict:
+    try:
+        return json.loads(status_path().read_text())
+    except (OSError, json.JSONDecodeError):
+        return {}
 
 
 def sync(state: State, verbose: bool = True, quiet_fail: bool = False,
@@ -75,6 +120,7 @@ def sync(state: State, verbose: bool = True, quiet_fail: bool = False,
 
     gist_id = cfg.get("gist_id")
     if not gist_id and not init:
+        _record(False, "no gist configured - run `ja sync --init`")
         if verbose:
             print("no gist configured yet — run `ja sync --init` once to "
                   "create a secret gist for the phone widget")
@@ -96,10 +142,12 @@ def sync(state: State, verbose: bool = True, quiet_fail: bool = False,
             else:
                 _gh("gist", "edit", gist_id, "--filename", GIST_FILENAME,
                     str(local))
-        except RuntimeError as exc:
+        except (RuntimeError, OSError) as exc:
+            _record(False, str(exc))
             if quiet_fail:
                 return None
             raise SystemExit(f"gist sync failed: {exc}")
+    _record(True, f"gist {gist_id}")
 
     user = _gh("api", "user", "--jq", ".login") if verbose else ""
     if verbose:

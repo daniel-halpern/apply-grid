@@ -175,34 +175,77 @@ class StaleTest(unittest.TestCase):
 
 
 class GridTest(unittest.TestCase):
-    def test_shape_and_alignment(self):
-        state = model.build([], CFG, TODAY)
-        cols = model.grid(state, 53)
-        self.assertEqual(len(cols), 53)
-        self.assertTrue(all(len(c) == 7 for c in cols))
-        # Row 0 is Sunday, GitHub-style.
+    """Two layouts, both pinned."""
+
+    def _state(self):
+        return model.build([], CFG, TODAY)
+
+    def test_shape(self):
+        for anchor in ("today", "sunday"):
+            cols = model.grid(self._state(), 53, anchor=anchor)
+            self.assertEqual(len(cols), 53)
+            self.assertTrue(all(len(c) == 7 for c in cols))
+
+    def test_today_anchor_is_a_solid_rectangle_ending_today(self):
+        """The default: no blank cells, today in the bottom-right corner."""
+        cols = model.grid(self._state(), 53, anchor="today")
+        blanks = [c for col in cols for c in col if c is None]
+        self.assertEqual(blanks, [])
+        self.assertEqual(cols[-1][6].day, TODAY)
+        # contiguous days, oldest first
+        flat = [c.day for col in cols for c in col]
+        self.assertEqual(flat[-1], TODAY)
+        self.assertEqual((flat[-1] - flat[0]).days, len(flat) - 1)
+
+    def test_today_anchor_rows_still_hold_one_weekday_each(self):
+        """Rotated, not scrambled -- a row must stay a single weekday."""
+        cols = model.grid(self._state(), 53, anchor="today")
+        for row in range(7):
+            weekdays = {col[row].day.weekday() for col in cols}
+            self.assertEqual(len(weekdays), 1)
+        self.assertEqual(cols[-1][6].day.weekday(), TODAY.weekday())
+
+    def test_sunday_anchor_matches_github(self):
+        cols = model.grid(self._state(), 53, anchor="sunday")
         first = next(c for c in cols[0] if c is not None)
-        self.assertEqual(first.day.weekday(), 6)
-        # Today sits in the final column; the rest of that week is unrendered.
+        self.assertEqual(first.day.weekday(), 6)          # Sunday
         last = [c for c in cols[-1] if c is not None]
         self.assertEqual(last[-1].day, TODAY)
         self.assertEqual(sum(1 for c in cols[-1] if c is None), 4)  # Wed-Sat
 
-    def test_no_future_cells(self):
-        state = model.build([], CFG, TODAY)
-        for col in model.grid(state, 53):
-            for cell in col:
-                if cell is not None:
-                    self.assertLessEqual(cell.day, TODAY)
+    def test_no_future_cells_in_either_layout(self):
+        for anchor in ("today", "sunday"):
+            for col in model.grid(self._state(), 53, anchor=anchor):
+                for cell in col:
+                    if cell is not None:
+                        self.assertLessEqual(cell.day, TODAY)
+
+    def test_anchor_defaults_from_config(self):
+        state = model.build([], {**CFG, "week_anchor": "sunday"}, TODAY)
+        self.assertTrue(any(c is None for col in model.grid(state, 53)
+                            for c in col))
+        state = model.build([], {**CFG, "week_anchor": "today"}, TODAY)
+        self.assertFalse(any(c is None for col in model.grid(state, 53)
+                             for c in col))
 
     def test_month_labels_land_on_month_starts(self):
-        state = model.build([], CFG, TODAY)
-        cols = model.grid(state, 53)
+        cols = model.grid(self._state(), 53)
         labels = model.month_labels(cols)
         self.assertTrue(labels)
         for idx, name in labels.items():
             week = [c for c in cols[idx] if c is not None]
             self.assertIn(name, [d.day.strftime("%b") for d in week])
+
+    def test_weekday_labels_follow_the_rotation(self):
+        cols = model.grid(self._state(), 53, anchor="today")
+        labels = model.weekday_labels(cols)
+        self.assertEqual(len(labels), 7)
+        # the labelled rows must name the weekday actually on that row
+        for row, name in enumerate(labels):
+            if name:
+                self.assertEqual(name, cols[0][row].day.strftime("%a"))
+        # bottom row is today's weekday
+        self.assertEqual(cols[0][6].day.strftime("%a"), TODAY.strftime("%a"))
 
 
 if __name__ == "__main__":

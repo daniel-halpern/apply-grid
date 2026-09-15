@@ -59,11 +59,13 @@ class HtmlWidgetTest(unittest.TestCase):
         self.assertIn("__APPLYGRID_BIN__", installer)
         self.assertIn("__APPLYGRID_MODE__", installer)
 
-    def test_scriptable_gist_placeholder_present(self):
+    def test_scriptable_gist_placeholders_present(self):
+        """Both must be substituted, or the widget silently can't fetch."""
         src = WIDGET.read_text()
-        self.assertIn("__APPLYGRID_GIST_RAW__", src)
         cli_src = (ROOT / "applygrid" / "cli.py").read_text()
-        self.assertIn("__APPLYGRID_GIST_RAW__", cli_src)
+        for token in ("__APPLYGRID_GIST_RAW__", "__APPLYGRID_GIST_ID__"):
+            self.assertIn(token, src, f"{token} missing from the widget")
+            self.assertIn(token, cli_src, f"{token} not substituted by the CLI")
 
 
 if __name__ == "__main__":

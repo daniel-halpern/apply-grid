@@ -55,8 +55,8 @@ class ApplyGrid(rumps.App):
         def run():
             try:
                 publish.sync(self.state, verbose=False, quiet_fail=True)
-            except Exception:
-                pass
+            except Exception as exc:  # noqa: BLE001
+                publish._record(False, f"{type(exc).__name__}: {exc}")
         threading.Thread(target=run, daemon=True).start()
 
     # -- menu ---------------------------------------------------------------
@@ -66,6 +66,10 @@ class ApplyGrid(rumps.App):
         for line in render_menubar.header_lines(self.state):
             items.append(rumps.MenuItem(line) if line
                          else rumps.separator)
+        status = publish.last_status()
+        if status and not status.get("ok"):
+            detail = str(status.get("detail", "?"))[:46]
+            items.append(rumps.MenuItem(f"⚠ phone sync failing — {detail}"))
         items.append(rumps.separator)
 
         items.append(rumps.MenuItem("Log tailored application…",

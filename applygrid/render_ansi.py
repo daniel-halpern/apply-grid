@@ -12,7 +12,6 @@ from . import model, palette
 from .model import State
 
 BLOCK = "██"          # two full blocks read as a square at most sizes
-WEEKDAY_LABELS = ["", "Mon", "", "Wed", "", "Fri", ""]
 GUTTER = 4                      # width of the weekday label column
 
 
@@ -29,6 +28,7 @@ def render(state: State, weeks: int | None = None, mode: str | None = None,
     sch = palette.scheme(mode)
     cols = model.grid(state, fit_weeks(weeks))
     labels = model.month_labels(cols)
+    weekdays = model.weekday_labels(cols)
     muted = palette.fg(sch["muted"])
     ink = palette.fg(sch["ink"])
     out = []
@@ -43,7 +43,7 @@ def render(state: State, weeks: int | None = None, mode: str | None = None,
     out.append(muted + "".join(header).rstrip() + palette.RESET)
 
     for row in range(7):
-        line = [muted + WEEKDAY_LABELS[row].ljust(GUTTER) + palette.RESET]
+        line = [muted + weekdays[row].ljust(GUTTER) + palette.RESET]
         for col in cols:
             cell = col[row]
             if cell is None:

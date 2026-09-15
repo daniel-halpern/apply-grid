@@ -109,6 +109,11 @@ ja sync --init          # one time: creates a secret gist (this uploads)
 ja phone-script | pbcopy  # paste into a new Scriptable script
 ```
 
+The widget reads the GitHub API copy first (cached 60s) and falls back to the
+raw gist URL (cached 300s, and a query string does not bust it), so it shows the
+freshest snapshot available. iOS still refreshes widgets on its own schedule, so
+expect it to trail your Mac by a few minutes.
+
 **What gets uploaded.** A secret gist's raw URL is unguessable but
 unauthenticated, so the payload is aggregates only: per-day intensity levels,
 funnel counts, streaks. No company names, no roles, no URLs, no notes — and
@@ -150,6 +155,20 @@ paths, or if the sync payload ever carries a company name.
 **What a public repo still reveals:** nothing about your applications — but
 your commit timestamps show when you worked on the tool, and the repo name
 itself says you're job searching. If that matters, keep it private.
+
+## Layout
+
+`week_anchor` in `config.json`:
+
+- `"today"` (default) — the last cell is today, bottom-right, and no cell is
+  ever blank. Rows still hold one weekday each, just rotated so today's weekday
+  is the bottom row.
+- `"sunday"` — GitHub's layout exactly: row 0 is Sunday, and the remaining days
+  of the current week render as gaps. Faithful, but it leaves a ragged notch in
+  the bottom-right corner.
+
+The layout travels in the sync payload, so the phone lays the grid out the same
+way as the Mac rather than duplicating the choice.
 
 ## Colors
 

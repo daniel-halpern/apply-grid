@@ -3,6 +3,7 @@
   "weekly_target_multiplier": 4,
   "stale_after_days": 10,
   "give_up_after_days": 45,
+  "week_anchor": "today",
   "weights": {
     "application_tailored": 3,
     "application_quick": 1,

@@ -8,7 +8,15 @@
 // GIST_RAW below (or run `ja phone-script` on your Mac, which prints this file
 // with the URL already filled in), then add a Scriptable widget and pick it.
 
+// Filled in by `ja phone-script` on your Mac.
+const GIST_ID = "__APPLYGRID_GIST_ID__";
 const GIST_RAW = "__APPLYGRID_GIST_RAW__";
+
+// The API copy is cached for 60s; the raw CDN copy for 300s and a query string
+// does not bust it. So try the API first and keep raw as a fallback -- an
+// unauthenticated gist read is 1 of 60 requests/hour, and this refreshes far
+// less often than that.
+const GIST_API = "https://api.github.com/gists/" + GIST_ID;
 
 const CACHE = "apply-grid-cache.json";
 
@@ -29,65 +37,94 @@ function cachePath() {
   return fm.joinPath(fm.cacheDirectory(), CACHE);
 }
 
+async function fetchJSON(url, transform) {
+  const req = new Request(url);
+  req.timeoutInterval = 8;
+  req.headers = { "Accept": "application/vnd.github+json" };
+  const body = await req.loadJSON();
+  const data = transform ? transform(body) : body;
+  if (!data || typeof data.levels !== "string") throw new Error("bad payload");
+  return data;
+}
+
 async function loadData() {
   const fm = FileManager.local();
   const path = cachePath();
-  try {
-    const req = new Request(GIST_RAW);
-    req.timeoutInterval = 8;
-    const data = await req.loadJSON();
-    if (!data || typeof data.levels !== "string") throw new Error("bad payload");
-    fm.writeString(path, JSON.stringify(data));
-    return { data, stale: false };
-  } catch (err) {
-    // Offline or the gist moved: show the last good snapshot rather than an
-    // error, so a missing signal never reads as "you did nothing".
-    if (fm.fileExists(path)) {
-      return { data: JSON.parse(fm.readString(path)), stale: true };
+  const attempts = [
+    // Freshest first.
+    () => fetchJSON(GIST_API, (b) => {
+      const file = b.files && Object.values(b.files)[0];
+      if (!file || !file.content) throw new Error("no gist file");
+      return JSON.parse(file.content);
+    }),
+    () => fetchJSON(GIST_RAW),
+  ];
+  for (const attempt of attempts) {
+    try {
+      const data = await attempt();
+      fm.writeString(path, JSON.stringify(data));
+      return { data, stale: false };
+    } catch (err) {
+      // try the next source
     }
-    return { data: null, stale: true };
   }
+  // Offline, or the gist moved: show the last good snapshot rather than an
+  // error, so a missing signal never reads as "you did nothing".
+  if (fm.fileExists(path)) {
+    return { data: JSON.parse(fm.readString(path)), stale: true };
+  }
+  return { data: null, stale: true };
 }
 
 function levelsEndingToday(data, days) {
-  const all = data.levels;
-  return all.slice(Math.max(0, all.length - days));
+  let out = data.levels.slice(Math.max(0, data.levels.length - days));
+  while (out.length < days) out = "0" + out;   // payload shorter than the grid
+  return out;
+}
+
+function fillCell(ctx, c, r, cell, gap, fill) {
+  const rect = new Rect(c * (cell + gap), r * (cell + gap), cell, cell);
+  const path = new Path();
+  path.addRoundedRect(rect, 1.5, 1.5);
+  ctx.addPath(path);
+  ctx.setFillColor(new Color(fill));
+  ctx.fillPath();
 }
 
 function drawGrid(data, weeks, cell, gap, sch) {
   const cols = weeks;
-  const width = cols * (cell + gap) - gap;
-  const height = 7 * (cell + gap) - gap;
   const ctx = new DrawContext();
-  ctx.size = new Size(width, height);
+  ctx.size = new Size(cols * (cell + gap) - gap, 7 * (cell + gap) - gap);
   ctx.opaque = false;
   ctx.respectScreenScale = true;
 
-  // The payload ends on `today`; walk back so the last column is this week and
-  // the grid aligns to Sunday exactly like the Mac and terminal versions.
-  const today = new Date(data.today + "T12:00:00");
-  const dow = today.getDay();                   // 0 = Sunday
-  const total = cols * 7;
-  const levels = levelsEndingToday(data, total - (6 - dow));
+  const shade = (ch) => {
+    const lvl = parseInt(ch, 10) || 0;
+    return lvl === 0 ? sch.empty : sch.levels[lvl - 1];
+  };
 
+  // The layout comes from the payload so the phone can't drift from the Mac.
+  if ((data.anchor || "today") === "today") {
+    // Solid rectangle: the last cell is today, nothing is ever blank.
+    const levels = levelsEndingToday(data, cols * 7);
+    for (let c = 0; c < cols; c++) {
+      for (let r = 0; r < 7; r++) {
+        fillCell(ctx, c, r, cell, gap, shade(levels[c * 7 + r]));
+      }
+    }
+    return ctx.getImage();
+  }
+
+  // Sunday-anchored: row 0 is Sunday and the rest of this week stays blank.
+  const today = new Date(data.today + "T12:00:00");
+  const dow = today.getDay();
+  const levels = levelsEndingToday(data, cols * 7 - (6 - dow));
   let idx = levels.length - 1;
   for (let c = cols - 1; c >= 0; c--) {
     for (let r = 6; r >= 0; r--) {
-      const isFuture = c === cols - 1 && r > dow;
-      let fill = sch.empty;
-      if (!isFuture) {
-        const ch = idx >= 0 ? levels[idx] : "0";
-        idx--;
-        const lvl = parseInt(ch, 10) || 0;
-        fill = lvl === 0 ? sch.empty : sch.levels[lvl - 1];
-      }
-      if (isFuture) continue;
-      const rect = new Rect(c * (cell + gap), r * (cell + gap), cell, cell);
-      const path = new Path();
-      path.addRoundedRect(rect, 1.5, 1.5);
-      ctx.addPath(path);
-      ctx.setFillColor(new Color(fill));
-      ctx.fillPath();
+      if (c === cols - 1 && r > dow) continue;      // future: leave blank
+      fillCell(ctx, c, r, cell, gap, shade(idx >= 0 ? levels[idx] : "0"));
+      idx--;
     }
   }
   return ctx.getImage();
