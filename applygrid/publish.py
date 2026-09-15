@@ -89,8 +89,8 @@ def sync(state: State, verbose: bool = True, quiet_fail: bool = False,
                           "--desc", "apply-grid aggregates (no identifying data)",
                           str(local))
                 gist_id = url.rstrip("/").rsplit("/", 1)[-1]
-                cfg["gist_id"] = gist_id
-                config.save(cfg)
+                # Local-only: this id is the widget's access control.
+                config.set_local("gist_id", gist_id)
                 if verbose:
                     print(f"created secret gist {gist_id}")
             else:

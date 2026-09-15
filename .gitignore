@@ -1,3 +1,12 @@
+# Machine-local, never commit: holds gist_id, which is the phone widget's
+# only access control.
+config.local.json
+
+# Your job search. The default log path is ~/.local/share/apply-grid/, outside
+# this repo, but ignore the legacy in-repo location too so it can never be
+# committed by accident.
+data/
+
 .venv/
 __pycache__/
 *.pyc

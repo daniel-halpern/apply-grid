@@ -88,15 +88,39 @@ about 600 bytes. Read `applygrid/publish.py` before trusting that claim.
 
 Every other surface reads the log directly off your disk and uploads nothing.
 
-## Your data
+## Your data, and publishing this repo
 
-`data/events.jsonl` is an append-only event log — one JSON object per line,
-never rewritten. Everything else is a pure fold over it, so it's the only file
-worth backing up, and a future email-ingester could append to it without
-touching a single renderer.
+The event log is an append-only JSONL file — one object per line, never
+rewritten. Everything else is a pure fold over it, so it's the only file worth
+backing up, and a future email-ingester could append to it without touching a
+single renderer.
 
-> **This file is tracked by git and contains your real job search.** Keep this
-> repo private, and don't add a public remote.
+**It lives outside the repo**, at `~/.local/share/apply-grid/events.jsonl`, so
+the code can be public without your job search following it. Override with
+`APPLYGRID_DATA`.
+
+Two things must never be committed, and `.gitignore` covers both:
+
+| | why |
+|---|---|
+| `data/` | the legacy in-repo log location, ignored so it can't be added by accident |
+| `config.local.json` | holds `gist_id` — a secret gist is *unlisted, not private*, so that id is the phone widget's only access control |
+
+`config.json` is the shareable half: point weights and targets, no secrets.
+
+Before making the repo public, run the guards:
+
+```bash
+python3 -m unittest discover -s tests
+```
+
+`tests/test_privacy.py` fails if an event log or `config.local.json` is tracked,
+if `config.json` regains a `gist_id`, if `.gitignore` stops covering those
+paths, or if the sync payload ever carries a company name.
+
+**What a public repo still reveals:** nothing about your applications — but
+your commit timestamps show when you worked on the tool, and the repo name
+itself says you're job searching. If that matters, keep it private.
 
 ## Colors
 

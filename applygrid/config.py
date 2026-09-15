@@ -65,30 +65,64 @@ KIND_LABELS = {
 }
 
 
+# Your event log lives OUTSIDE the repo by default, so the code can be public
+# without your job search following it. Nothing in the repo tree can leak what
+# was never written there.
+DEFAULT_DATA_DIR = Path("~/.local/share/apply-grid").expanduser()
+LEGACY_DATA = REPO_ROOT / "data" / "events.jsonl"
+
+
 def data_path() -> Path:
     """Event log location. APPLYGRID_DATA overrides, for tests and fixtures."""
     override = os.environ.get("APPLYGRID_DATA")
     if override:
         return Path(override).expanduser()
-    return REPO_ROOT / "data" / "events.jsonl"
+    # Honour an in-repo log if one already exists, rather than silently
+    # orphaning it when this default changed.
+    if LEGACY_DATA.exists():
+        return LEGACY_DATA
+    return DEFAULT_DATA_DIR / "events.jsonl"
 
 
 def config_path() -> Path:
+    """Shared, committed settings: point weights and targets."""
     override = os.environ.get("APPLYGRID_CONFIG")
     if override:
         return Path(override).expanduser()
     return REPO_ROOT / "config.json"
 
 
+def local_config_path() -> Path:
+    """Machine-local settings that must never be committed.
+
+    `gist_id` lives here. That id is the phone widget's only access control --
+    a secret gist is unlisted, not private -- so publishing it would hand
+    anyone your aggregates.
+    """
+    override = os.environ.get("APPLYGRID_LOCAL_CONFIG")
+    if override:
+        return Path(override).expanduser()
+    return REPO_ROOT / "config.local.json"
+
+
+LOCAL_ONLY_KEYS = ("gist_id",)
+
+
+def _read_json(path: Path, label: str) -> dict:
+    if not path.exists():
+        return {}
+    try:
+        return json.loads(path.read_text() or "{}")
+    except json.JSONDecodeError as exc:
+        raise SystemExit(f"{label} is not valid JSON: {exc}")
+
+
 def load() -> dict:
-    """Load config, falling back to defaults for anything missing."""
+    """Defaults, then config.json, then config.local.json (highest priority)."""
     cfg = json.loads(json.dumps(DEFAULTS))  # deep copy
-    path = config_path()
-    if path.exists():
-        try:
-            user = json.loads(path.read_text() or "{}")
-        except json.JSONDecodeError as exc:
-            raise SystemExit(f"config.json is not valid JSON: {exc}")
+    for path, label in ((config_path(), "config.json"),
+                        (local_config_path(), "config.local.json")):
+        user = _read_json(path, label)
         weights = user.pop("weights", None) or {}
         cfg.update(user)
         cfg["weights"].update(weights)
@@ -97,5 +131,9 @@ def load() -> dict:
     return cfg
 
 
-def save(cfg: dict) -> None:
-    config_path().write_text(json.dumps(cfg, indent=2) + "\n")
+def set_local(key: str, value) -> None:
+    """Persist one machine-local value, leaving the committed config alone."""
+    path = local_config_path()
+    blob = _read_json(path, "config.local.json")
+    blob[key] = value
+    path.write_text(json.dumps(blob, indent=2) + "\n")
