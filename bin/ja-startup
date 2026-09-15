@@ -5,14 +5,18 @@
 # the rendered string is cached against both and replayed with `cat`. The
 # Python interpreter is never started on the hot path -- interpreter startup
 # alone is most of the budget.
+#
+# It renders even with an empty log on purpose: an empty grid is the nudge, and
+# staying silent on a fresh install just looks broken.
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-DATA="${APPLYGRID_DATA:-$ROOT/data/events.jsonl}"
-[ -f "$DATA" ] || exit 0                      # nothing logged yet: stay silent
+DATA="${APPLYGRID_DATA:-$HOME/.local/share/apply-grid/events.jsonl}"
+[ -f "$ROOT/data/events.jsonl" ] && DATA="$ROOT/data/events.jsonl"   # legacy path
 
 DIR="$ROOT/.cache"
 CACHE="$DIR/startup-${COLUMNS:-0}-$(date +%Y%m%d).txt"
 
-if [ -f "$CACHE" ] && [ "$CACHE" -nt "$DATA" ]; then
+# Fresh if the cache exists and is no older than the log (or there's no log).
+if [ -f "$CACHE" ] && { [ ! -f "$DATA" ] || [ "$CACHE" -nt "$DATA" ]; }; then
   cat "$CACHE"
   exit 0
 fi
