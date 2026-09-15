@@ -38,13 +38,20 @@ fi
 say "==> venv ready"
 
 # 2. Übersicht widget -------------------------------------------------------
-if [ -d "$HOME/Library/Application Support/Übersicht" ]; then
+# Übersicht may be installed but never launched, in which case its support
+# directory doesn't exist yet -- so key off the app, and create the dir.
+if [ -d "/Applications/Übersicht.app" ] || [ -d "$UB_WIDGETS" ]; then
   mkdir -p "$UB_WIDGETS/apply-grid.widget"
   sed -e "s|__APPLYGRID_BIN__|$JA|g" -e "s|__APPLYGRID_MODE__|$MODE|g" \
     "$ROOT/widgets/apply-grid.widget/index.jsx" \
     > "$UB_WIDGETS/apply-grid.widget/index.jsx"
-  say "==> Übersicht widget installed (it appears on your desktop within 5 min,"
-  say "    or immediately via Übersicht's menu > Refresh All Widgets)"
+  say "==> Übersicht widget installed"
+  if ! pgrep -qx "Übersicht" 2>/dev/null; then
+    say "    Übersicht isn't running yet — open it once (it lives in the menu"
+    say "    bar) and the widget appears on your desktop."
+  else
+    say "    it appears within 5 min, or now via Übersicht > Refresh All Widgets"
+  fi
 else
   say "==> Übersicht not found — install it first, then re-run this script:"
   say "      brew install --cask ubersicht"
