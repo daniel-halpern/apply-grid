@@ -5,8 +5,9 @@
 // this stands in for it. Run via tests/test_widget_families.py, or directly:
 //   node tests/widget_harness.mjs widgets/scriptable/apply-grid.js payload.json
 //
-// Expected cell counts are weeks x 7: small 84, medium/large 182,
-// accessoryRectangular 119. The circular and inline families draw no grid.
+// Expected cell counts are weeks x 7: small 84, medium 182, large 364
+// (two stacked half-year grids), accessoryRectangular 147. The circular and
+// inline families draw no grid.
 import fs from "fs";
 
 const src = fs.readFileSync(process.argv[2], "utf8");
@@ -71,8 +72,9 @@ for (const family of families) {
   try {
     await fn(Color, Size, Rect, Path, DrawContext, ListWidget, Font, Device,
              FileManager, Request, Script, config);
-      const want = { small: 84, medium: 182, large: 182,
-                   accessoryRectangular: 119, accessoryCircular: 0,
+      // weeks x 7; large stacks two half-year grids.
+    const want = { small: 84, medium: 182, large: 364,
+                   accessoryRectangular: 147, accessoryCircular: 0,
                    accessoryInline: 0 }[family];
     if (drawn !== want) {
       failures++;

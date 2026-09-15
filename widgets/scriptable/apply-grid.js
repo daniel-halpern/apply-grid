@@ -1,4 +1,4 @@
-// Apply Grid \u2014 Scriptable widget for the iPhone home or lock screen.
+// Apply Grid -- Scriptable widget for the iPhone home or lock screen.
 //
 // Reads the aggregate-only snapshot your Mac pushes to a secret gist. That
 // payload carries counts and intensity levels and nothing else: no company
@@ -95,7 +95,7 @@ function fillCell(ctx, c, r, cell, gap, color) {
 // green ramp flattens to one shade there. Carry intensity in alpha instead.
 const MONO_ALPHA = [0.18, 0.45, 0.65, 0.82, 1.0];
 
-function drawGrid(data, weeks, cell, gap, sch, mono) {
+function drawGrid(data, weeks, cell, gap, sch, mono, offsetWeeks) {
   const cols = weeks;
   const ctx = new DrawContext();
   ctx.size = new Size(cols * (cell + gap) - gap, 7 * (cell + gap) - gap);
@@ -111,7 +111,13 @@ function drawGrid(data, weeks, cell, gap, sch, mono) {
   // The layout comes from the payload so the phone can't drift from the Mac.
   if ((data.anchor || "today") === "today") {
     // Solid rectangle: the last cell is today, nothing is ever blank.
-    const levels = levelsEndingToday(data, cols * 7);
+    // offsetWeeks shifts the window back, so two grids can stack into a year.
+    const back = (offsetWeeks || 0) * 7;
+    const window = back
+      ? { levels: data.levels.slice(0, Math.max(0, data.levels.length - back)),
+          anchor: "today" }
+      : data;
+    const levels = levelsEndingToday(window, cols * 7);
     for (let c = 0; c < cols; c++) {
       for (let r = 0; r < 7; r++) {
         fillCell(ctx, c, r, cell, gap, shade(levels[c * 7 + r]));
@@ -166,11 +172,12 @@ function addFunnel(widget, sch, data) {
 }
 
 const GEOMETRY = {
-  small:                 { weeks: 12, cell: 8, gap: 2 },
-  medium:                { weeks: 26, cell: 9, gap: 2 },
-  large:                 { weeks: 26, cell: 10, gap: 3 },
-  // ~160x72pt slot, so a shorter history and tighter cells.
-  accessoryRectangular:  { weeks: 17, cell: 7, gap: 1, mono: true },
+  // weeks x (cell+gap) - gap must stay just under the inner width, or iOS
+  // scales the image down and the grid looks smaller than its box.
+  small:                { weeks: 12, cell: 8, gap: 2 },   // 118 of 132pt
+  medium:               { weeks: 26, cell: 9, gap: 2 },   // 284 of 312pt
+  large:                { weeks: 26, cell: 10, gap: 2 },  // 310 of 312pt, x2
+  accessoryRectangular: { weeks: 21, cell: 6, gap: 1 },   // 146 of ~152pt
 };
 
 function emptyState(widget, sch, lock) {
@@ -182,6 +189,18 @@ function emptyState(widget, sch, lock) {
   m.font = Font.systemFont(lock ? 10 : 11);
   if (!lock) m.textColor = new Color(sch.muted);
   return widget;
+}
+
+function addStats(widget, sch, data) {
+  const bits = [
+    `${data.streak_days}d streak`,
+    `best ${data.best_streak_days}d`,
+    `${data.active} active`,
+  ];
+  if (data.stale) bits.push(`${data.stale} to chase`);
+  const line = widget.addText(bits.join("  \u00B7  "));
+  line.font = Font.systemFont(11);
+  line.textColor = new Color(sch.muted);
 }
 
 async function build() {
@@ -241,11 +260,30 @@ async function build() {
   }
 
   addRow(widget, sch, data, stale);
+
+  const addGrid = (offsetWeeks) => {
+    const img = widget.addImage(drawGrid(
+      data, geometry.weeks, geometry.cell, geometry.gap, sch, false,
+      offsetWeeks));
+    img.applyFittingContentMode();
+    img.centerAlignImage();
+  };
+
+  if (family === "large") {
+    // A 7-row grid leaves more than half of a large box empty, so show a full
+    // year as two stacked half-years and let flexible spacers spread it out.
+    widget.addSpacer();
+    addGrid(geometry.weeks);          // the older half
+    widget.addSpacer(4);
+    addGrid(0);                       // the recent half, ending today
+    widget.addSpacer();
+    addFunnel(widget, sch, data);
+    addStats(widget, sch, data);
+    return widget;
+  }
+
   widget.addSpacer(8);
-  const img = widget.addImage(drawGrid(
-    data, geometry.weeks, geometry.cell, geometry.gap, sch, false));
-  img.applyFittingContentMode();
-  img.centerAlignImage();
+  addGrid(0);
 
   if (family !== "small") {
     widget.addSpacer(8);

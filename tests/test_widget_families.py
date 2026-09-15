@@ -59,6 +59,37 @@ class WidgetFamilyTest(unittest.TestCase):
                        "accessoryCircular", "accessoryInline"):
             self.assertIn(family, proc.stdout)
 
+    def test_geometry_fits_inside_every_box(self):
+        """An oversized image gets scaled down and reads as too small."""
+        import re
+        src = WIDGET.read_text()
+        block = re.search(r"const GEOMETRY = \{(.+?)\n\};", src, re.S).group(1)
+        found = dict(
+            (m.group(1), (int(m.group(2)), int(m.group(3)), int(m.group(4))))
+            for m in re.finditer(
+                r"(\w+):\s*\{\s*weeks:\s*(\d+),\s*cell:\s*(\d+),"
+                r"\s*gap:\s*(\d+)", block))
+        # iPhone Pro boxes minus this widget's own padding. The accessory
+        # family uses setPadding(2, 4, 2, 4), not the desktop 12/13, so its
+        # inner width is 160 - 8, not 160 - 26.
+        inner = {"small": 158 - 26, "medium": 338 - 26, "large": 338 - 26,
+                 "accessoryRectangular": 160 - 8}
+        self.assertEqual(set(found), set(inner),
+                         "a family is missing from GEOMETRY or from this test")
+        for family, (weeks, cell, gap) in found.items():
+            width = weeks * (cell + gap) - gap
+            height = 7 * (cell + gap) - gap
+            self.assertGreater(height, 0)
+            self.assertLessEqual(width, inner[family],
+                                 f"{family} grid is {width}pt in a "
+                                 f"{inner[family]}pt box")
+            # 0.88 rather than 0.9: medium sits at 91% and is deliberately
+            # left alone, so the floor only has to catch a real mismatch like
+            # the 43%-of-height large grid or an overflowing accessory slot.
+            self.assertGreater(width / inner[family], 0.88,
+                               f"{family} grid only fills "
+                               f"{100 * width / inner[family]:.0f}% of its box")
+
     def test_lock_screen_families_are_handled_explicitly(self):
         """Not just present -- they must not fall through to a desktop size."""
         src = WIDGET.read_text()
