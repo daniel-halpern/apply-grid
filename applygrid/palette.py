@@ -37,8 +37,22 @@ LIGHT = {
 
 
 def scheme(mode: str | None = None) -> dict:
-    """Pick a mode. Terminals can't be probed, so dark is the default."""
-    mode = (mode or os.environ.get("APPLYGRID_MODE") or "dark").lower()
+    """Pick a ramp.
+
+    Precedence: an explicit argument, then APPLYGRID_MODE, then the
+    color_scheme setting, then dark -- terminals can't be probed for their
+    background, so dark is the fallback.
+
+    In the light ramp darker green means more. The dark ramp brightens
+    instead, because on a near-black surface "darker" tends toward invisible.
+    """
+    if not mode:
+        mode = os.environ.get("APPLYGRID_MODE")
+    if not mode:
+        from . import config
+        chosen = config.load().get("color_scheme", "auto")
+        mode = None if chosen == "auto" else chosen
+    mode = (mode or "dark").lower()
     return LIGHT if mode.startswith("l") else DARK
 
 

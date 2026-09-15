@@ -67,7 +67,7 @@ class ApplyGrid(rumps.App):
             items.append(rumps.MenuItem(line) if line
                          else rumps.separator)
         status = publish.last_status()
-        if status and not status.get("ok"):
+        if status and not status.get("ok") and not status.get("skipped"):
             detail = str(status.get("detail", "?"))[:46]
             items.append(rumps.MenuItem(f"⚠ phone sync failing — {detail}"))
         items.append(rumps.separator)
@@ -148,6 +148,9 @@ class ApplyGrid(rumps.App):
             items.append(rumps.MenuItem("Restore last removal",
                                         callback=self.restore_last))
 
+        items.append(rumps.separator)
+        items.append(rumps.MenuItem("Settings…",
+                                    callback=self.open_settings))
         items.append(rumps.separator)
         items.append(rumps.MenuItem("Sync to phone now",
                                     callback=self.sync_now))
@@ -311,11 +314,12 @@ class ApplyGrid(rumps.App):
                 ok="Close")
         return cb
 
-    def open_editor(self, _) -> None:
-        """Launch the editor as its own process.
+    def _open_window(self, module: str, label: str) -> None:
+        """Launch a Tk window as its own process.
 
         rumps owns this thread's run loop and Tk needs a main thread of its
-        own, so the window cannot be opened in-process.
+        own, so a window cannot be opened in-process. The window raises itself
+        to the front on start, since the menu bar agent isn't the active app.
         """
         import os
         import subprocess
@@ -323,25 +327,35 @@ class ApplyGrid(rumps.App):
         root = str(config.REPO_ROOT)
         env = dict(os.environ, PYTHONPATH=root)
         try:
-            subprocess.Popen([sys.executable, "-m", "applygrid.editor"],
+            subprocess.Popen([sys.executable, "-m", module],
                              cwd=root, env=env,
                              stdout=subprocess.DEVNULL,
                              stderr=subprocess.DEVNULL)
         except OSError as exc:
-            rumps.alert("Could not open the editor", str(exc))
+            rumps.alert(f"Could not open {label}", str(exc))
+
+    def open_editor(self, _) -> None:
+        self._open_window("applygrid.editor", "the editor")
+
+    def open_settings(self, _) -> None:
+        self._open_window("applygrid.settings", "settings")
 
     def sync_now(self, _) -> None:
-        try:
-            gist = publish.sync(self.state, verbose=False)
-        except SystemExit as exc:
-            rumps.alert("Sync failed", str(exc))
-            return
-        if gist:
-            rumps.notification("Synced", "Phone widget updated", "")
-        else:
-            rumps.alert("Not set up yet",
-                        "Run `ja sync --init` once in a terminal to create the "
-                        "secret gist the phone widget reads.")
+        """Explicit sync. Threaded, so the menu doesn't hang for ~800ms."""
+        def run():
+            try:
+                gist = publish.sync(self.state, verbose=False)
+            except SystemExit as exc:
+                rumps.notification("Sync failed", str(exc), "")
+                return
+            if gist:
+                rumps.notification("Synced", "Phone widget updated", "")
+            else:
+                status = publish.last_status()
+                rumps.notification(
+                    "Nothing sent", status.get("detail", "") if status else "",
+                    "")
+        threading.Thread(target=run, daemon=True).start()
 
 
 def main() -> None:

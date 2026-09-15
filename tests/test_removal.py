@@ -24,6 +24,10 @@ class RemovalTest(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.path = Path(self.tmp.name) / "events.jsonl"
         os.environ["APPLYGRID_DATA"] = str(self.path)
+        # Isolate the config too, so a sync triggered by the code
+        # under test can never read the real gist_id.
+        os.environ["APPLYGRID_LOCAL_CONFIG"] = str(
+            self.path.parent / "config.local.json")
         self.rows = [
             {"id": "a1", "ts": "2026-09-10T12:00:00-04:00",
              "kind": "application_tailored", "company": "Stripe", "role": "SWE"},
@@ -38,6 +42,7 @@ class RemovalTest(unittest.TestCase):
 
     def tearDown(self):
         os.environ.pop("APPLYGRID_DATA", None)
+        os.environ.pop("APPLYGRID_LOCAL_CONFIG", None)
         self.tmp.cleanup()
 
     def test_read_lines_is_file_order_not_sorted(self):
@@ -101,6 +106,10 @@ class EditTest(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.path = Path(self.tmp.name) / "events.jsonl"
         os.environ["APPLYGRID_DATA"] = str(self.path)
+        # Isolate the config too, so a sync triggered by the code
+        # under test can never read the real gist_id.
+        os.environ["APPLYGRID_LOCAL_CONFIG"] = str(
+            self.path.parent / "config.local.json")
         events.append({"id": "a1", "ts": "2026-09-10T12:00:00-04:00",
                        "kind": "application_tailored", "company": "Strpie",
                        "role": "SWE"}, self.path)
@@ -109,6 +118,7 @@ class EditTest(unittest.TestCase):
 
     def tearDown(self):
         os.environ.pop("APPLYGRID_DATA", None)
+        os.environ.pop("APPLYGRID_LOCAL_CONFIG", None)
         self.tmp.cleanup()
 
     def _fixed(self):

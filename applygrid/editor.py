@@ -14,7 +14,7 @@ import tkinter as tk
 from datetime import date, datetime, time
 from tkinter import messagebox, ttk
 
-from . import config, events, model, publish
+from . import background, config, events, model, publish, window
 
 # Editable in the form; id and app_id are shown read-only because changing them
 # would silently orphan an application's outcome events.
@@ -51,7 +51,7 @@ class Editor:
         self.sort_key = "when"
         self.sort_desc = True
         self.selected: Row | None = None
-        self.dirty = False
+        self._loaded: dict[str, str] = {}
 
         root.title("Apply Grid — Entries")
         root.geometry("940x560")
@@ -59,6 +59,9 @@ class Editor:
 
         self._build()
         self.reload()
+        # A sync is ~800ms of network; inline it froze the window on each save.
+        self.syncer = background.Syncer(root, on_status=self.say)
+        root.protocol("WM_DELETE_WINDOW", self.on_close)
 
     # -- layout -------------------------------------------------------------
     def _build(self) -> None:
@@ -241,6 +244,27 @@ class Editor:
             bits.append(f"attached to {blob['app_id']}{who}")
         self.link_label.configure(
             text="  ·  ".join(bits) or "standalone entry")
+        self._loaded = self.form_values()
+
+    def form_values(self) -> dict[str, str]:
+        return {k: v.get() for k, v in self.fields.items()}
+
+    def has_unsaved_edits(self) -> bool:
+        """Text typed into the form but never written to the log."""
+        return bool(self._loaded) and self.form_values() != self._loaded
+
+    def on_close(self) -> None:
+        """Typing in a field is not on disk until Save, so ask before losing it."""
+        if self.has_unsaved_edits():
+            changed = [k for k, v in self.form_values().items()
+                       if self._loaded.get(k) != v]
+            if not messagebox.askyesno(
+                    "Discard unsaved changes?",
+                    "These fields were edited but not saved:\n\n  "
+                    + ", ".join(sorted(changed))
+                    + "\n\nClose anyway?", parent=self.root):
+                return
+        self.root.destroy()
 
     def collect(self) -> dict | None:
         """Read the form back into an event, or complain and return None."""
@@ -295,6 +319,7 @@ class Editor:
             return
         index = self.selected.index
         events.replace_index(index, blob)
+        self._loaded = self.form_values()
         self.after_write("Saved.", keep_index=index)
 
     def delete(self) -> None:
@@ -331,15 +356,7 @@ class Editor:
             self.tree.selection_set(str(keep_index))
             self.on_select()
         self.say(message)
-        try:
-            publish.sync(model.build(events.read(), self.cfg),
-                         verbose=False, quiet_fail=True)
-        except Exception:  # noqa: BLE001 - editing must not depend on sync
-            pass
-        status = publish.last_status()
-        if status and not status.get("ok"):
-            self.say(f"{message}  (phone sync failed: "
-                     f"{status.get('detail', '?')})")
+        self.syncer.request()          # debounced, reports back when it lands
 
     def say(self, message: str) -> None:
         self.status.configure(text=message, foreground="#444")
@@ -350,11 +367,8 @@ class Editor:
 
 def main() -> None:
     root = tk.Tk()
-    try:
-        root.call("tk", "scaling", 2.0)   # sharper on a Retina display
-    except tk.TclError:
-        pass
     Editor(root)
+    window.bring_to_front(root)
     root.mainloop()
 
 

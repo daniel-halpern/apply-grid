@@ -9,6 +9,7 @@ no URLs, no notes ever leave the machine.
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 import tempfile
@@ -37,6 +38,9 @@ def payload(state: State) -> dict:
         # choice travels with the data rather than being duplicated as a
         # constant on both sides.
         "anchor": state.cfg.get("week_anchor", "today"),
+        # "auto" lets the phone follow its own appearance; a pinned value wins,
+        # so the light ramp (darker green = more) can be forced.
+        "scheme": state.cfg.get("color_scheme", "auto"),
         "levels": levels,
         "target": state.target,
         "weekly_target": state.weekly_target,
@@ -92,12 +96,19 @@ def status_path() -> Path:
     return config.data_path().parent / "last-sync.json"
 
 
-def _record(ok: bool, detail: str = "") -> None:
+def _record(ok: bool, detail: str = "", skipped: bool = False) -> None:
+    """Record the last sync outcome.
+
+    `skipped` marks a deliberate no-push -- switched off, or not the real log.
+    Those keep ok=True so no surface reports a failure the user didn't cause,
+    while the detail still says why nothing was sent.
+    """
     try:
         path = status_path()
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps({
             "ok": ok,
+            "skipped": skipped,
             "at": datetime.now().astimezone().replace(microsecond=0).isoformat(),
             "detail": detail,
         }, indent=2) + "\n")
@@ -115,12 +126,33 @@ def last_status() -> dict:
 def sync(state: State, verbose: bool = True, quiet_fail: bool = False,
          init: bool = False) -> str | None:
     cfg = config.load()
+    if not config.surface_enabled("phone_sync", cfg) and not init:
+        _record(True, "phone sync is switched off in settings", skipped=True)
+        if verbose:
+            print("phone sync is switched off in settings")
+        return None
+
+    # Only the real log may publish. A test or a fixture run points
+    # APPLYGRID_DATA somewhere else, and any code path that syncs would
+    # otherwise push that data to the live gist -- which is exactly how test
+    # fixture aggregates once reached the phone.
+    active = config.data_path().resolve()
+    allowed = {(config.DEFAULT_DATA_DIR / "events.jsonl").resolve()}
+    if config.LEGACY_DATA.exists():
+        allowed.add(config.LEGACY_DATA.resolve())
+    if active not in allowed and os.environ.get("APPLYGRID_ALLOW_SYNC") != "1":
+        message = (f"refusing to sync: the active log is {active}, not your "
+                   f"real one. Set APPLYGRID_ALLOW_SYNC=1 to override.")
+        _record(True, message, skipped=True)
+        if verbose:
+            print(message)
+        return None
     blob = payload(state)
     assert_no_pii(blob)
 
     gist_id = cfg.get("gist_id")
     if not gist_id and not init:
-        _record(False, "no gist configured - run `ja sync --init`")
+        _record(True, "no gist configured - run `ja sync --init`", skipped=True)
         if verbose:
             print("no gist configured yet — run `ja sync --init` once to "
                   "create a secret gist for the phone widget")

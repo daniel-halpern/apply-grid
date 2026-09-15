@@ -79,10 +79,25 @@ def read_lines(path: Path | None = None) -> list[str]:
 
 
 def _rewrite(lines: list[str], path: Path) -> None:
-    """Replace the log atomically, so an interrupted write can't truncate it."""
+    """Replace the log atomically, so an interrupted write can't truncate it.
+
+    The temp file is fsynced *before* the rename, and the directory after it.
+    An atomic rename alone is not enough: the rename can reach disk before the
+    data blocks do, which on a power loss leaves a file that exists but is
+    empty or short.
+    """
     tmp = path.with_name(path.name + ".tmp")
-    tmp.write_text("".join(l + "\n" for l in lines), encoding="utf-8")
+    with tmp.open("w", encoding="utf-8") as fh:
+        fh.write("".join(l + "\n" for l in lines))
+        fh.flush()
+        os.fsync(fh.fileno())
     os.replace(tmp, path)
+    # Persist the directory entry too, so the rename itself survives.
+    fd = os.open(path.parent, os.O_RDONLY)
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
 
 
 def remove_indices(indices: set[int], path: Path | None = None) -> list[dict]:

@@ -36,6 +36,10 @@ class EditorTest(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.path = Path(self.tmp.name) / "events.jsonl"
         os.environ["APPLYGRID_DATA"] = str(self.path)
+        # Isolate the config too, so a sync triggered by the code
+        # under test can never read the real gist_id.
+        os.environ["APPLYGRID_LOCAL_CONFIG"] = str(
+            self.path.parent / "config.local.json")
         rows = [
             {"id": "a1", "ts": "2026-09-10T09:00:00-04:00",
              "kind": "application_tailored", "company": "Strpie",
@@ -56,6 +60,7 @@ class EditorTest(unittest.TestCase):
     def tearDown(self):
         self.root.destroy()
         os.environ.pop("APPLYGRID_DATA", None)
+        os.environ.pop("APPLYGRID_LOCAL_CONFIG", None)
         self.tmp.cleanup()
 
     def _select(self, index: int):

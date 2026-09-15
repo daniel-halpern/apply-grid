@@ -21,6 +21,16 @@ DEFAULTS = {
     # blank. "sunday": GitHub's layout, which leaves a ragged notch
     # at the bottom right for the rest of the current week.
     "week_anchor": "today",
+    # "auto" follows the host (dark terminal, phone appearance). "light" pins
+    # the light ramp, where darker green means more; "dark" pins the ramp that
+    # brightens, which is what a near-black surface needs.
+    "color_scheme": "auto",
+    # Each surface can be switched off without uninstalling anything.
+    "surfaces": {
+        "desktop_widget": True,
+        "terminal": True,
+        "phone_sync": True,
+    },
     "weights": {
         "application_tailored": 3,
         "application_quick": 1,
@@ -112,6 +122,11 @@ def local_config_path() -> Path:
 LOCAL_ONLY_KEYS = ("gist_id",)
 
 
+def surface_enabled(name: str, cfg: dict | None = None) -> bool:
+    cfg = cfg or load()
+    return bool(cfg.get("surfaces", {}).get(name, True))
+
+
 def _read_json(path: Path, label: str) -> dict:
     if not path.exists():
         return {}
@@ -128,11 +143,25 @@ def load() -> dict:
                         (local_config_path(), "config.local.json")):
         user = _read_json(path, label)
         weights = user.pop("weights", None) or {}
+        surfaces = user.pop("surfaces", None) or {}
         cfg.update(user)
         cfg["weights"].update(weights)
+        cfg["surfaces"].update(surfaces)
     if cfg["daily_target"] <= 0:
         raise SystemExit("daily_target must be greater than 0")
     return cfg
+
+
+def update_local(values: dict) -> None:
+    """Merge several machine-local settings at once."""
+    path = local_config_path()
+    blob = _read_json(path, "config.local.json")
+    for key, value in values.items():
+        if isinstance(value, dict) and isinstance(blob.get(key), dict):
+            blob[key].update(value)
+        else:
+            blob[key] = value
+    path.write_text(json.dumps(blob, indent=2) + "\n")
 
 
 def set_local(key: str, value) -> None:

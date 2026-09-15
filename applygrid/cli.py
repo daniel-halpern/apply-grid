@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from datetime import date, datetime, time
 
@@ -414,12 +415,22 @@ def _maybe_sync(args) -> None:
     if getattr(args, "no_sync", False):
         return
     from . import publish
+    # A sync is ~800ms of network. Detach it so logging returns immediately;
+    # start_new_session keeps it alive after this process exits.
+    import subprocess
     try:
-        publish.sync(load_state(), verbose=False, quiet_fail=True)
-    except Exception as exc:  # noqa: BLE001 - logging must still succeed
+        subprocess.Popen(
+            [sys.executable, "-m", "applygrid.cli", "sync"],
+            cwd=str(config.REPO_ROOT),
+            env=dict(os.environ, PYTHONPATH=str(config.REPO_ROOT)),
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            start_new_session=True)
+    except OSError as exc:
         publish._record(False, f"{type(exc).__name__}: {exc}")
+    # Reports the previous sync's outcome, since this one is still in flight.
+    # A persistent failure therefore still surfaces on the next log.
     status = publish.last_status()
-    if status and not status.get("ok"):
+    if status and not status.get("ok") and not status.get("skipped"):
         print(f"  note: phone sync failed — {status.get('detail', '?')}")
         print("        Mac surfaces are unaffected; retry with:  ja sync")
 

@@ -28,7 +28,13 @@ const RAMP = {
            levels: ["#62c958", "#4ab341", "#319c28", "#108604"] },
 };
 
-function scheme() {
+function scheme(data) {
+  // A pinned scheme travels in the payload and wins. In the light ramp darker
+  // green means more; the dark ramp brightens instead, because on a near-black
+  // surface darker tends toward invisible.
+  const pinned = data && data.scheme;
+  if (pinned === "light") return RAMP.light;
+  if (pinned === "dark") return RAMP.dark;
   return Device.isUsingDarkAppearance() ? RAMP.dark : RAMP.light;
 }
 
@@ -204,8 +210,8 @@ function addStats(widget, sch, data) {
 }
 
 async function build() {
-  const sch = scheme();
   const { data, stale } = await loadData();
+  const sch = scheme(data);
   const widget = new ListWidget();
   const family = config.widgetFamily || "medium";
   const lock = family.indexOf("accessory") === 0;

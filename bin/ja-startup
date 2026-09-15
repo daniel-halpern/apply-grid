@@ -12,6 +12,15 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 DATA="${APPLYGRID_DATA:-$HOME/.local/share/apply-grid/events.jsonl}"
 [ -f "$ROOT/data/events.jsonl" ] && DATA="$ROOT/data/events.jsonl"   # legacy path
 
+# Switched off in settings? One grep is cheaper than starting Python, and this
+# runs on every new shell.
+for CFG in "$ROOT/config.local.json" "$ROOT/config.json"; do
+  [ -f "$CFG" ] || continue
+  if tr -d ' \n' < "$CFG" | grep -q '"terminal":false'; then
+    exit 0
+  fi
+done
+
 DIR="$ROOT/.cache"
 CACHE="$DIR/startup-${COLUMNS:-0}-$(date +%Y%m%d).txt"
 

@@ -25,6 +25,10 @@ def _tooltip(cell: model.Cell, target: int) -> str:
 
 
 def render(state: State, weeks: int = 26, mode: str | None = None) -> str:
+    # Switched off in settings: emit nothing so the desktop widget disappears
+    # without having to touch Ubersicht's own widget folder.
+    if not config.surface_enabled("desktop_widget", state.cfg):
+        return ""
     sch = palette.scheme(mode)
     cols = model.grid(state, weeks)
     labels = model.month_labels(cols)
