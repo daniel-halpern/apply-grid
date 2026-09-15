@@ -228,6 +228,34 @@ def build(raw_events: list[dict], cfg: dict | None = None,
     return state
 
 
+def events_on(raw_events: list[dict], day: date,
+              apps: dict[str, Application] | None = None) -> list[dict]:
+    """Everything logged on one day, with company names filled in.
+
+    Answers "what did I actually do that day?" -- the question a green square
+    makes you ask.
+    """
+    apps = apps or {}
+    out = []
+    for event in raw_events:
+        if ev_mod.parse_ts(event["ts"]).date() != day:
+            continue
+        row = dict(event)
+        if not row.get("company") and row.get("app_id") in apps:
+            app = apps[row["app_id"]]
+            row["company"] = app.company
+            row.setdefault("role", app.role)
+        out.append(row)
+    return out
+
+
+def active_days(state: State, limit: int = 14) -> list[tuple[date, int]]:
+    """Most recent days with any effort, newest first."""
+    days = sorted((d for d, p in state.daily_points.items() if p > 0),
+                  reverse=True)
+    return [(d, state.daily_points[d]) for d in days[:limit]]
+
+
 def bucket(points: int, target: int) -> int:
     """Intensity level 0-4.
 

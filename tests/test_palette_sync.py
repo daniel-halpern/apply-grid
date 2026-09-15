@@ -68,5 +68,25 @@ class HtmlWidgetTest(unittest.TestCase):
             self.assertIn(token, cli_src, f"{token} not substituted by the CLI")
 
 
+class WidgetEncodingTest(unittest.TestCase):
+    def test_phone_widget_source_is_pure_ascii(self):
+        """Scriptable decoded pasted UTF-8 as Mac Roman.
+
+        A literal middle dot (\xc2\xb7) rendered on the phone as the two
+        characters mac-roman maps those bytes to. JS escape sequences survive
+        any file or clipboard encoding, so the source must stay ASCII.
+        """
+        raw = WIDGET.read_bytes()
+        offenders = [(i, b) for i, b in enumerate(raw) if b > 127]
+        self.assertEqual(
+            offenders, [],
+            f"non-ASCII bytes in {WIDGET.name}: {offenders[:5]} "
+            f"- use \\uXXXX escapes instead")
+
+    def test_escapes_are_present_where_text_needs_them(self):
+        src = WIDGET.read_text()
+        self.assertIn("\\u00B7", src)   # middle dot separator
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

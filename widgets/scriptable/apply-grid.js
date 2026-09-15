@@ -1,4 +1,4 @@
-// Apply Grid — Scriptable widget for the iPhone home or lock screen.
+// Apply Grid \u2014 Scriptable widget for the iPhone home or lock screen.
 //
 // Reads the aggregate-only snapshot your Mac pushes to a secret gist. That
 // payload carries counts and intensity levels and nothing else: no company
@@ -147,15 +147,15 @@ function addRow(widget, sch, data, stale) {
   const bits = [`${data.streak_days}d`];
   if (data.stale) bits.push(`${data.stale} to chase`);
   if (stale) bits.push("offline");
-  const meta = row.addText(bits.join("  ·  "));
+  const meta = row.addText(bits.join("  \u00B7  "));
   meta.font = Font.systemFont(11);
   meta.textColor = new Color(sch.muted);
 }
 
 function addFunnel(widget, sch, data) {
   const line = widget.addText(
-    `${data.applied} applied  ·  ${data.screens} screens` +
-    (data.offers ? `  ·  ${data.offers} offer${data.offers === 1 ? "" : "s"}` : ""));
+    `${data.applied} applied  \u00B7  ${data.screens} screens` +
+    (data.offers ? `  \u00B7  ${data.offers} offer${data.offers === 1 ? "" : "s"}` : ""));
   line.font = Font.systemFont(11);
   line.textColor = new Color(sch.muted);
 }

@@ -99,6 +99,18 @@ class ApplyGrid(rumps.App):
 
         items.append(rumps.MenuItem("Record an outcome…",
                                     callback=self.record_outcome))
+
+        # The question a green square makes you ask. Desktop and phone widgets
+        # can't answer it -- neither is clickable -- so it lives here.
+        days = model.active_days(self.state, 14)
+        history = rumps.MenuItem("What did I do on…")
+        if days:
+            for day, pts in days:
+                label = f"{day.strftime('%a %-d %b')}   {pts} pts"
+                history.add(rumps.MenuItem(label, callback=self._day_cb(day)))
+        else:
+            history.add(rumps.MenuItem("nothing logged yet"))
+        items.append(history)
         items.append(rumps.separator)
 
         # An escape hatch for mistakes, right next to the thing that makes
@@ -280,6 +292,22 @@ class ApplyGrid(rumps.App):
         self._sync_async()
         if back:
             rumps.notification("Restored", f"{len(back)} event(s) put back", "")
+
+    def _day_cb(self, day):
+        def cb(_):
+            rows = model.events_on(events.read(), day, self.state.apps)
+            lines = []
+            for row in rows:
+                label = config.KIND_LABELS.get(row["kind"], row["kind"])
+                who = row.get("company", "")
+                role = row.get("role", "")
+                name = f"{who}{' / ' + role if role else ''}" if who else ""
+                lines.append(f"{label}{'  —  ' + name if name else ''}")
+            rumps.alert(
+                day.strftime("%A %-d %B"),
+                "\n".join(lines) or "nothing logged",
+                ok="Close")
+        return cb
 
     def sync_now(self, _) -> None:
         try:

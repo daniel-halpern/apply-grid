@@ -340,6 +340,37 @@ def cmd_restore(args) -> None:
     _maybe_sync(args)
 
 
+def cmd_on(args) -> None:
+    """What did I do on a given day?"""
+    from datetime import date as _date
+    if args.date:
+        try:
+            day = _date.fromisoformat(args.date)
+        except ValueError:
+            raise SystemExit(f"date must be YYYY-MM-DD, got {args.date!r}")
+    else:
+        day = _date.today()
+    state = load_state()
+    rows = model.events_on(events.read(), day, state.apps)
+    sch = palette.scheme(getattr(args, "mode", None))
+    ink, muted, r = palette.fg(sch["ink"]), palette.fg(sch["muted"]), palette.RESET
+    pts = state.points_on(day)
+    print(f"\n{ink}{day.strftime('%a %-d %b %Y')}{r}"
+          f"{muted}  \u2014  {pts}/{state.target} pts{r}")
+    if not rows:
+        print(f"{muted}  nothing logged{r}\n")
+        return
+    for row in rows:
+        label = config.KIND_LABELS.get(row["kind"], row["kind"])
+        who = row.get("company", "")
+        role = row.get("role", "")
+        weight = state.cfg["weights"].get(row["kind"], 0)
+        badge = f"+{weight}" if weight else "  "
+        name = f"{who}{' / ' + role if role else ''}" if who else ""
+        print(f"  {muted}{badge}{r}  {label:<24} {name}")
+    print()
+
+
 def cmd_sync(args) -> None:
     from . import publish
     publish.sync(load_state(), verbose=True, init=args.init)
@@ -462,6 +493,11 @@ def build_parser() -> argparse.ArgumentParser:
     rs = sub.add_parser("restore", help="undo the last removal")
     rs.add_argument("--no-sync", action="store_true")
     rs.set_defaults(func=cmd_restore)
+
+    on = sub.add_parser("on", help="what you did on a given day")
+    on.add_argument("date", nargs="?", help="YYYY-MM-DD (default today)")
+    _add_mode(on)
+    on.set_defaults(func=cmd_on)
 
     sy = sub.add_parser("sync", help="push aggregates to the phone's gist")
     sy.add_argument("--init", action="store_true",
