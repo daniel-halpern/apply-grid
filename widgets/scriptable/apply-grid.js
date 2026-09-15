@@ -82,16 +82,20 @@ function levelsEndingToday(data, days) {
   return out;
 }
 
-function fillCell(ctx, c, r, cell, gap, fill) {
+function fillCell(ctx, c, r, cell, gap, color) {
   const rect = new Rect(c * (cell + gap), r * (cell + gap), cell, cell);
   const path = new Path();
   path.addRoundedRect(rect, 1.5, 1.5);
   ctx.addPath(path);
-  ctx.setFillColor(new Color(fill));
+  ctx.setFillColor(color);
   ctx.fillPath();
 }
 
-function drawGrid(data, weeks, cell, gap, sch) {
+// Lock screen widgets are rendered monochrome and tinted by the system, so a
+// green ramp flattens to one shade there. Carry intensity in alpha instead.
+const MONO_ALPHA = [0.18, 0.45, 0.65, 0.82, 1.0];
+
+function drawGrid(data, weeks, cell, gap, sch, mono) {
   const cols = weeks;
   const ctx = new DrawContext();
   ctx.size = new Size(cols * (cell + gap) - gap, 7 * (cell + gap) - gap);
@@ -100,7 +104,8 @@ function drawGrid(data, weeks, cell, gap, sch) {
 
   const shade = (ch) => {
     const lvl = parseInt(ch, 10) || 0;
-    return lvl === 0 ? sch.empty : sch.levels[lvl - 1];
+    if (mono) return new Color("#ffffff", MONO_ALPHA[lvl]);
+    return new Color(lvl === 0 ? sch.empty : sch.levels[lvl - 1]);
   };
 
   // The layout comes from the payload so the phone can't drift from the Mac.
@@ -160,35 +165,85 @@ function addFunnel(widget, sch, data) {
   line.textColor = new Color(sch.muted);
 }
 
+const GEOMETRY = {
+  small:                 { weeks: 12, cell: 8, gap: 2 },
+  medium:                { weeks: 26, cell: 9, gap: 2 },
+  large:                 { weeks: 26, cell: 10, gap: 3 },
+  // ~160x72pt slot, so a shorter history and tighter cells.
+  accessoryRectangular:  { weeks: 17, cell: 7, gap: 1, mono: true },
+};
+
+function emptyState(widget, sch, lock) {
+  const t = widget.addText("apply-grid");
+  t.font = Font.semiboldSystemFont(lock ? 11 : 13);
+  if (!lock) t.textColor = new Color(sch.ink);
+  const m = widget.addText(
+    lock ? "no data yet" : "No snapshot yet. Run `ja sync --init` on your Mac.");
+  m.font = Font.systemFont(lock ? 10 : 11);
+  if (!lock) m.textColor = new Color(sch.muted);
+  return widget;
+}
+
 async function build() {
   const sch = scheme();
   const { data, stale } = await loadData();
   const widget = new ListWidget();
-  widget.backgroundColor = new Color(sch.surface);
-  widget.setPadding(12, 13, 12, 13);
+  const family = config.widgetFamily || "medium";
+  const lock = family.indexOf("accessory") === 0;
 
-  if (!data) {
-    const t = widget.addText("apply-grid");
-    t.font = Font.semiboldSystemFont(13);
-    t.textColor = new Color(sch.ink);
-    const m = widget.addText("No snapshot yet. Run `ja sync --init` on your Mac.");
-    m.font = Font.systemFont(11);
-    m.textColor = new Color(sch.muted);
+  if (lock) {
+    // The system owns the background and tint on the lock screen; setting a
+    // background colour here is ignored at best and muddy at worst.
+    try { widget.addAccessoryWidgetBackground = true; } catch (e) {}
+    widget.setPadding(2, 4, 2, 4);
+  } else {
+    widget.backgroundColor = new Color(sch.surface);
+    widget.setPadding(12, 13, 12, 13);
+  }
+
+  if (!data) return emptyState(widget, sch, lock);
+
+  // One line of text, no room for a grid.
+  if (family === "accessoryInline") {
+    widget.addText(
+      `${data.today_points}/${data.target} today \u00B7 ${data.streak_days}d`);
     return widget;
   }
 
-  const family = config.widgetFamily || "medium";
-  // Fit as many weeks as the family can show, most recent last.
-  const geometry = {
-    small:  { weeks: 12, cell: 8,  gap: 2 },
-    medium: { weeks: 26, cell: 9,  gap: 2 },
-    large:  { weeks: 26, cell: 10, gap: 3 },
-  }[family] || { weeks: 26, cell: 9, gap: 2 };
+  // A small circle: the numbers only.
+  if (family === "accessoryCircular") {
+    const stack = widget.addStack();
+    stack.layoutVertically();
+    stack.centerAlignContent();
+    const big = stack.addText(String(data.today_points));
+    big.font = Font.boldSystemFont(18);
+    big.centerAlignText();
+    const sub = stack.addText(`of ${data.target}`);
+    sub.font = Font.systemFont(9);
+    sub.centerAlignText();
+    return widget;
+  }
+
+  const geometry = GEOMETRY[family] || GEOMETRY.medium;
+
+  if (family === "accessoryRectangular") {
+    const head = widget.addText(
+      `${data.today_points}/${data.target} today` +
+      `  \u00B7  ${data.streak_days}d` +
+      (data.stale ? `  \u00B7  ${data.stale} to chase` : ""));
+    head.font = Font.systemFont(10);
+    widget.addSpacer(3);
+    const img = widget.addImage(drawGrid(
+      data, geometry.weeks, geometry.cell, geometry.gap, sch, true));
+    img.applyFittingContentMode();
+    img.leftAlignImage();
+    return widget;
+  }
 
   addRow(widget, sch, data, stale);
   widget.addSpacer(8);
-  const img = widget.addImage(
-    drawGrid(data, geometry.weeks, geometry.cell, geometry.gap, sch));
+  const img = widget.addImage(drawGrid(
+    data, geometry.weeks, geometry.cell, geometry.gap, sch, false));
   img.applyFittingContentMode();
   img.centerAlignImage();
 
