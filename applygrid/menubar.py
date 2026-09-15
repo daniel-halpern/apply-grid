@@ -7,6 +7,7 @@ already share.
 
 from __future__ import annotations
 
+import json
 import threading
 
 try:
@@ -94,6 +95,41 @@ class ApplyGrid(rumps.App):
 
         items.append(rumps.MenuItem("Record an outcome…",
                                     callback=self.record_outcome))
+        items.append(rumps.separator)
+
+        # An escape hatch for mistakes, right next to the thing that makes
+        # them. Naming what will be removed matters more than the verb.
+        lines = events.read_lines()
+        if lines:
+            last = json.loads(lines[-1])
+            company = ""
+            if last.get("app_id"):
+                app = self.state.apps.get(last["app_id"])
+                company = app.company if app else ""
+            items.append(rumps.MenuItem(
+                f"Undo: {events.describe(last, company)}",
+                callback=self.undo_last))
+        else:
+            items.append(rumps.MenuItem("Undo"))
+
+        recent = sorted(self.state.apps.values(),
+                        key=lambda a: a.applied_on, reverse=True)
+        remove = rumps.MenuItem("Remove an application")
+        if recent:
+            for app in recent[:15]:
+                label = f"{app.company}"
+                if app.role:
+                    label += f" / {app.role}"
+                remove.add(rumps.MenuItem(label,
+                                          callback=self._remove_cb(app.id)))
+        else:
+            remove.add(rumps.MenuItem("nothing logged yet"))
+        items.append(remove)
+
+        if events.trash_path().exists():
+            items.append(rumps.MenuItem("Restore last removal",
+                                        callback=self.restore_last))
+
         items.append(rumps.separator)
         items.append(rumps.MenuItem("Sync to phone now",
                                     callback=self.sync_now))
@@ -195,6 +231,51 @@ class ApplyGrid(rumps.App):
                        "app_id": live[0].id})
         self._refresh()
         self._sync_async()
+
+    def undo_last(self, _) -> None:
+        lines = events.read_lines()
+        if not lines:
+            return
+        last = json.loads(lines[-1])
+        company = ""
+        if last.get("app_id"):
+            app = self.state.apps.get(last["app_id"])
+            company = app.company if app else ""
+        if rumps.alert("Remove this?", events.describe(last, company),
+                       ok="Remove", cancel="Keep") != 1:
+            return
+        events.remove_indices({len(lines) - 1})
+        self._refresh()
+        self._sync_async()
+
+    def _remove_cb(self, app_id: str):
+        def cb(_):
+            app = self.state.apps.get(app_id)
+            if app is None:
+                return
+            lines = events.read_lines()
+            indices = {i for i, line in enumerate(lines)
+                       if json.loads(line).get("id") == app_id
+                       or json.loads(line).get("app_id") == app_id}
+            plural = "s" if len(indices) != 1 else ""
+            if rumps.alert(
+                    f"Remove {app.company}?",
+                    f"This removes the application and its {len(indices)} "
+                    f"event{plural}. You can put it back with "
+                    f"“Restore last removal”.",
+                    ok="Remove", cancel="Keep") != 1:
+                return
+            events.remove_indices(indices)
+            self._refresh()
+            self._sync_async()
+        return cb
+
+    def restore_last(self, _) -> None:
+        back = events.restore_last()
+        self._refresh()
+        self._sync_async()
+        if back:
+            rumps.notification("Restored", f"{len(back)} event(s) put back", "")
 
     def sync_now(self, _) -> None:
         try:

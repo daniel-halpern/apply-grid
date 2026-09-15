@@ -73,6 +73,35 @@ ja stale                            # who's owed a follow-up
 
 Backfill anything with `--date 2026-09-01`.
 
+Run `ja add` with no arguments and it walks you through it instead:
+
+```
+$ ja add
+  Company: Stripe
+  Role: Backend SWE
+  Tailored or quick? (t/q) [t]:
+  How did you find it? cold/referral/recruiter/event [cold]: referral
+
+logged tailored application — Stripe / Backend SWE (+3 pts, 3/3 today)
+  id b8bd   —   wrong? run:  ja undo
+```
+
+## Fixing mistakes
+
+```bash
+ja undo            # remove the last thing you logged (names it, then asks)
+ja rm stripe       # remove an application and every event on it
+ja restore         # put the last removal back
+```
+
+The same three are in the menu bar: **Undo** names exactly what it will remove,
+**Remove an application** lists your recent ones, and **Restore last removal**
+appears only when there's something to restore.
+
+Nothing is destroyed. Removals are appended to `removed.jsonl` next to your log
+with a batch stamp, so `restore` can put a batch back and two quick removals
+stay independent.
+
 ## The phone widget
 
 ```bash

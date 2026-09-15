@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from datetime import date, datetime, time
 
@@ -83,31 +84,62 @@ def find_app(state: model.State, ref: str) -> model.Application:
 
 # -- commands ---------------------------------------------------------------
 
+def _prompt(label: str, default: str = "") -> str:
+    suffix = f" [{default}]" if default else ""
+    try:
+        got = input(f"  {label}{suffix}: ").strip()
+    except (EOFError, KeyboardInterrupt):
+        raise SystemExit("\ncancelled — nothing logged")
+    return got or default
+
+
+def _guided_add() -> tuple[str, str, str, str]:
+    """Walk through it, for when you don't want to remember the syntax."""
+    print("\nLogging an application. Press Enter to accept the [default].\n")
+    company = _prompt("Company")
+    if not company:
+        raise SystemExit("a company name is required — nothing logged")
+    role = _prompt("Role", "")
+    kind = _prompt("Tailored or quick? (t/q)", "t")
+    kind = ("application_quick" if kind.lower().startswith("q")
+            else "application_tailored")
+    source = _prompt("How did you find it? cold/referral/recruiter/event", "cold")
+    return company, role, kind, source
+
+
 def cmd_add(args) -> None:
-    raw = " ".join(args.target).strip()
+    raw = " ".join(args.target).strip() if args.target else ""
     if not raw:
-        raise SystemExit('usage: ja add "Company / Role"')
+        # No isatty() gate: guided mode should work when driven by a pipe too,
+        # and _prompt already turns an immediate EOF into a clean exit.
+        company, role, kind, source = _guided_add()
+        _write_application(company, role, kind, source, args)
+        return
     company, _, role = raw.partition("/")
-    existing = events.read()
     kind = "application_quick" if args.quick else "application_tailored"
+    _write_application(company.strip(), role.strip(), kind, args.source, args)
+
+
+def _write_application(company: str, role: str, kind: str, source: str,
+                       args) -> None:
     event = {
-        "id": events.new_id(existing),
-        "ts": ts_for(args.date),
+        "id": events.new_id(events.read()),
+        "ts": ts_for(getattr(args, "date", None)),
         "kind": kind,
-        "company": company.strip(),
-        "role": role.strip(),
-        "source": args.source,
-        "url": args.url or "",
-        "notes": args.note or "",
+        "company": company,
+        "role": role,
+        "source": source,
+        "url": getattr(args, "url", "") or "",
+        "notes": getattr(args, "note", "") or "",
     }
     events.append(event)
     cfg = config.load()
     pts = cfg["weights"].get(kind, 0)
     state = load_state(cfg)
-    print(f"logged {config.KIND_LABELS[kind].lower()} — "
-          f"{event['company']}{' / ' + event['role'] if event['role'] else ''} "
-          f"(+{pts} pts, {state.points_on(state.today)}/{state.target} today, "
-          f"id {event['id']})")
+    print(f"\nlogged {config.KIND_LABELS[kind].lower()} — "
+          f"{company}{' / ' + role if role else ''} "
+          f"(+{pts} pts, {state.points_on(state.today)}/{state.target} today)")
+    print(f"  id {event['id']}   —   wrong? run:  ja undo")
     _maybe_sync(args)
 
 
@@ -243,6 +275,71 @@ def cmd_list(args) -> None:
               f"{app.role[:26]:<26} {muted}{status} · {app.source}{r}")
 
 
+def _confirm(question: str, assume_yes: bool) -> bool:
+    if assume_yes:
+        return True
+    if not sys.stdin.isatty():
+        raise SystemExit("not a terminal — re-run with --yes to confirm")
+    try:
+        return input(f"{question} [y/N] ").strip().lower().startswith("y")
+    except (EOFError, KeyboardInterrupt):
+        return False
+
+
+def cmd_undo(args) -> None:
+    """Remove the most recently logged event."""
+    lines = events.read_lines()
+    if not lines:
+        raise SystemExit("nothing logged yet")
+    last = json.loads(lines[-1])
+    company = ""
+    if last.get("app_id"):
+        app = load_state().apps.get(last["app_id"])
+        company = app.company if app else ""
+    print(f"about to remove:\n  {events.describe(last, company)}")
+    if not _confirm("remove it?", args.yes):
+        print("left alone")
+        return
+    events.remove_indices({len(lines) - 1})
+    state = load_state()
+    print(f"removed — now {state.points_on(state.today)}/{state.target} today."
+          f"  put it back with:  ja restore")
+    _maybe_sync(args)
+
+
+def cmd_rm(args) -> None:
+    """Remove an application and everything logged against it."""
+    state = load_state()
+    app = find_app(state, args.ref)
+    lines = events.read_lines()
+    indices = set()
+    for i, line in enumerate(lines):
+        blob = json.loads(line)
+        if blob.get("id") == app.id or blob.get("app_id") == app.id:
+            indices.add(i)
+    plural = "s" if len(indices) != 1 else ""
+    print(f"about to remove {app.company}"
+          f"{' / ' + app.role if app.role else ''} "
+          f"and its {len(indices)} event{plural}:")
+    for i in sorted(indices):
+        print(f"  {events.describe(json.loads(lines[i]), app.company)}")
+    if not _confirm("remove all of it?", args.yes):
+        print("left alone")
+        return
+    events.remove_indices(indices)
+    print("removed.  put it back with:  ja restore")
+    _maybe_sync(args)
+
+
+def cmd_restore(args) -> None:
+    back = events.restore_last()
+    if not back:
+        raise SystemExit("nothing to restore")
+    for row in back:
+        print(f"restored  {events.describe(row)}")
+    _maybe_sync(args)
+
+
 def cmd_sync(args) -> None:
     from . import publish
     publish.sync(load_state(), verbose=True, init=args.init)
@@ -299,7 +396,7 @@ def build_parser() -> argparse.ArgumentParser:
     sub = p.add_subparsers(dest="cmd")
 
     a = sub.add_parser("add", help="log a new application")
-    a.add_argument("target", nargs="+", metavar='"Company / Role"')
+    a.add_argument("target", nargs="*", metavar='"Company / Role"')
     a.add_argument("--quick", action="store_true",
                    help="a quick/easy-apply rather than a tailored one")
     a.add_argument("--tailored", action="store_true", help="(default)")
@@ -339,6 +436,21 @@ def build_parser() -> argparse.ArgumentParser:
     ls.add_argument("--limit", type=int, default=40)
     _add_mode(ls)
     ls.set_defaults(func=cmd_list)
+
+    un = sub.add_parser("undo", help="remove the thing you just logged")
+    un.add_argument("--yes", "-y", action="store_true", help="skip confirmation")
+    un.add_argument("--no-sync", action="store_true")
+    un.set_defaults(func=cmd_undo)
+
+    rm = sub.add_parser("rm", help="remove an application and its events")
+    rm.add_argument("ref", help="application id or company substring")
+    rm.add_argument("--yes", "-y", action="store_true", help="skip confirmation")
+    rm.add_argument("--no-sync", action="store_true")
+    rm.set_defaults(func=cmd_rm)
+
+    rs = sub.add_parser("restore", help="undo the last removal")
+    rs.add_argument("--no-sync", action="store_true")
+    rs.set_defaults(func=cmd_restore)
 
     sy = sub.add_parser("sync", help="push aggregates to the phone's gist")
     sy.add_argument("--init", action="store_true",
