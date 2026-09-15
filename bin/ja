@@ -1,0 +1,6 @@
+#!/bin/sh
+# Apply Grid CLI. Uses the project venv if present, else system python3.
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+PY="$ROOT/.venv/bin/python3"
+[ -x "$PY" ] || PY=python3
+PYTHONPATH="$ROOT${PYTHONPATH:+:$PYTHONPATH}" exec "$PY" -m applygrid.cli "$@"

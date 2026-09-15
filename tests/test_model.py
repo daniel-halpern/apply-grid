@@ -1,0 +1,209 @@
+"""Fold correctness, checked against hand-computed expectations.
+
+Run: python3 -m unittest discover -s tests  (from the repo root)
+"""
+
+from __future__ import annotations
+
+import sys
+import unittest
+from datetime import date, datetime, time, timedelta
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from applygrid import config, model  # noqa: E402
+
+TODAY = date(2026, 9, 15)          # a Tuesday
+CFG = {
+    "daily_target": 3,
+    "weekly_target_multiplier": 4,
+    "stale_after_days": 10,
+    "give_up_after_days": 45,
+    "weights": config.DEFAULTS["weights"],
+}
+
+
+def ts(day: date, hour: int = 12) -> str:
+    return datetime.combine(day, time(hour)).astimezone() \
+        .replace(microsecond=0).isoformat()
+
+
+def days_ago(n: int) -> date:
+    return TODAY - timedelta(days=n)
+
+
+class PointsTest(unittest.TestCase):
+    def test_weights_sum_per_day(self):
+        state = model.build([
+            {"id": "a1", "ts": ts(TODAY), "kind": "application_tailored",
+             "company": "Stripe", "role": "SWE"},
+            {"ts": ts(TODAY), "kind": "prep"},
+            {"id": "a2", "ts": ts(TODAY), "kind": "application_quick",
+             "company": "Ramp", "role": "SWE"},
+        ], CFG, TODAY)
+        self.assertEqual(state.points_on(TODAY), 3 + 1 + 1)
+
+    def test_outcomes_earn_no_points(self):
+        """A rejection is not effort, and must not tint the day."""
+        state = model.build([
+            {"id": "a1", "ts": ts(days_ago(30)), "kind": "application_tailored",
+             "company": "Stripe"},
+            {"ts": ts(TODAY), "kind": "rejected", "app_id": "a1"},
+        ], CFG, TODAY)
+        self.assertEqual(state.points_on(TODAY), 0)
+        self.assertEqual(model.bucket(state.points_on(TODAY), 3), 0)
+
+    def test_bucket_thresholds_and_cap(self):
+        b = lambda p: model.bucket(p, 3)
+        self.assertEqual(b(0), 0)
+        self.assertEqual(b(1), 1)          # 0.33x
+        self.assertEqual(b(2), 2)          # 0.67x
+        self.assertEqual(b(3), 3)          # exactly target
+        self.assertEqual(b(5), 3)          # 1.67x
+        self.assertEqual(b(6), 4)          # 2x
+        # A binge cannot set an unmatchable high-water mark.
+        self.assertEqual(b(60), b(6))
+
+
+class StreakTest(unittest.TestCase):
+    def _state(self, active_offsets):
+        evs = [{"ts": ts(days_ago(n)), "kind": "prep"} for n in active_offsets]
+        return model.build(evs, CFG, TODAY)
+
+    def test_counts_consecutive_days(self):
+        self.assertEqual(self._state([0, 1, 2, 3]).streak_days, 4)
+
+    def test_today_is_forgiving(self):
+        """An empty morning must not zero a live streak."""
+        self.assertEqual(self._state([1, 2, 3]).streak_days, 3)
+
+    def test_breaks_after_a_full_empty_day(self):
+        self.assertEqual(self._state([2, 3, 4]).streak_days, 0)
+
+    def test_best_streak_scans_history(self):
+        state = self._state([20, 21, 22, 23, 24, 1])
+        self.assertEqual(state.best_streak_days, 5)
+
+    def test_week_streak_needs_weekly_target(self):
+        # weekly target = 3 * 4 = 12 pts. Five tailored applications = 15.
+        evs = []
+        for week in range(3):
+            for day in range(5):
+                offset = 7 * week + day
+                evs.append({"id": f"w{week}{day}", "ts": ts(days_ago(offset)),
+                            "kind": "application_tailored", "company": "X"})
+        self.assertGreaterEqual(model.build(evs, CFG, TODAY).week_streak, 2)
+
+
+class PipelineTest(unittest.TestCase):
+    def _app(self, ident, offset, company="Stripe", source="cold"):
+        return {"id": ident, "ts": ts(days_ago(offset)),
+                "kind": "application_tailored", "company": company,
+                "role": "SWE", "source": source}
+
+    def test_funnel_is_cumulative(self):
+        """Reaching onsite counts at every earlier stage too."""
+        state = model.build([
+            self._app("a1", 40),
+            {"ts": ts(days_ago(30)), "kind": "response_screen", "app_id": "a1"},
+            {"ts": ts(days_ago(20)), "kind": "response_technical", "app_id": "a1"},
+            {"ts": ts(days_ago(10)), "kind": "response_onsite", "app_id": "a1"},
+            self._app("a2", 30),
+        ], CFG, TODAY)
+        f = state.funnel
+        self.assertEqual((f["applied"], f["screen"], f["technical"],
+                          f["onsite"], f["offer"]), (2, 1, 1, 1, 0))
+
+    def test_stage_never_regresses(self):
+        state = model.build([
+            self._app("a1", 40),
+            {"ts": ts(days_ago(20)), "kind": "response_onsite", "app_id": "a1"},
+            {"ts": ts(days_ago(10)), "kind": "response_screen", "app_id": "a1"},
+        ], CFG, TODAY)
+        self.assertEqual(state.apps["a1"].stage, "onsite")
+
+    def test_first_response_lag(self):
+        state = model.build([
+            self._app("a1", 40),
+            {"ts": ts(days_ago(25)), "kind": "response_screen", "app_id": "a1"},
+            {"ts": ts(days_ago(5)), "kind": "response_technical", "app_id": "a1"},
+        ], CFG, TODAY)
+        self.assertEqual(state.apps["a1"].first_response_lag, 15)
+
+    def test_channel_conversion(self):
+        state = model.build([
+            self._app("a1", 40, source="referral"),
+            {"ts": ts(days_ago(30)), "kind": "response_screen", "app_id": "a1"},
+            self._app("a2", 40, source="cold"),
+            self._app("a3", 40, source="cold"),
+        ], CFG, TODAY)
+        by_src = {src: (n, adv) for src, n, adv in state.channels}
+        self.assertEqual(by_src["referral"], (1, 1))
+        self.assertEqual(by_src["cold"], (2, 0))
+
+
+class StaleTest(unittest.TestCase):
+    def _app(self, ident, offset):
+        return {"id": ident, "ts": ts(days_ago(offset)),
+                "kind": "application_tailored", "company": f"Co{ident}"}
+
+    def test_window_is_bounded_at_both_ends(self):
+        state = model.build([
+            self._app("fresh", 3),     # too recent to chase
+            self._app("due", 20),      # in the window
+            self._app("cold", 90),     # past give-up: cold, not owed
+        ], CFG, TODAY)
+        self.assertEqual([a.id for a in state.stale()], ["due"])
+        self.assertEqual([a.id for a in state.cold_apps], ["cold"])
+
+    def test_terminal_and_offer_apps_are_not_chased(self):
+        state = model.build([
+            self._app("rej", 20),
+            {"ts": ts(days_ago(19)), "kind": "rejected", "app_id": "rej"},
+            self._app("won", 20),
+            {"ts": ts(days_ago(19)), "kind": "offer", "app_id": "won"},
+        ], CFG, TODAY)
+        self.assertEqual(state.stale(), [])
+
+    def test_a_followup_resets_the_clock(self):
+        state = model.build([
+            self._app("a1", 30),
+            {"ts": ts(days_ago(2)), "kind": "follow_up", "app_id": "a1"},
+        ], CFG, TODAY)
+        self.assertEqual(state.stale(), [])
+
+
+class GridTest(unittest.TestCase):
+    def test_shape_and_alignment(self):
+        state = model.build([], CFG, TODAY)
+        cols = model.grid(state, 53)
+        self.assertEqual(len(cols), 53)
+        self.assertTrue(all(len(c) == 7 for c in cols))
+        # Row 0 is Sunday, GitHub-style.
+        first = next(c for c in cols[0] if c is not None)
+        self.assertEqual(first.day.weekday(), 6)
+        # Today sits in the final column; the rest of that week is unrendered.
+        last = [c for c in cols[-1] if c is not None]
+        self.assertEqual(last[-1].day, TODAY)
+        self.assertEqual(sum(1 for c in cols[-1] if c is None), 4)  # Wed-Sat
+
+    def test_no_future_cells(self):
+        state = model.build([], CFG, TODAY)
+        for col in model.grid(state, 53):
+            for cell in col:
+                if cell is not None:
+                    self.assertLessEqual(cell.day, TODAY)
+
+    def test_month_labels_land_on_month_starts(self):
+        state = model.build([], CFG, TODAY)
+        cols = model.grid(state, 53)
+        labels = model.month_labels(cols)
+        self.assertTrue(labels)
+        for idx, name in labels.items():
+            week = [c for c in cols[idx] if c is not None]
+            self.assertIn(name, [d.day.strftime("%b") for d in week])
+
+
+if __name__ == "__main__":
+    unittest.main(verbosity=2)

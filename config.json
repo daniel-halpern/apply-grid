@@ -1,0 +1,17 @@
+{
+  "daily_target": 3,
+  "weekly_target_multiplier": 4,
+  "stale_after_days": 10,
+  "give_up_after_days": 45,
+  "weights": {
+    "application_tailored": 3,
+    "application_quick": 1,
+    "referral_ask": 2,
+    "cold_outreach": 2,
+    "follow_up": 1,
+    "interview": 5,
+    "resume_work": 2,
+    "prep": 1
+  },
+  "gist_id": null
+}

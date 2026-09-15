@@ -1,0 +1,218 @@
+"""macOS menu bar app: the always-visible surface and the only logging path.
+
+Deliberately thin -- every number comes from model.State and every write goes
+through events.append, so this file holds no logic the other surfaces don't
+already share.
+"""
+
+from __future__ import annotations
+
+import threading
+
+try:
+    import rumps
+except ImportError:  # pragma: no cover
+    raise SystemExit(
+        "the menu bar app needs rumps:\n"
+        "  cd <repo> && python3 -m venv .venv && "
+        ".venv/bin/pip install rumps")
+
+from . import config, events, model, publish, render_menubar
+
+REFRESH_SECONDS = 60
+
+EFFORT_CHOICES = [
+    ("prep", "Interview prep"),
+    ("resume_work", "Resume / portfolio work"),
+    ("referral_ask", "Referral ask"),
+    ("cold_outreach", "Cold outreach"),
+    ("interview", "Interview"),
+]
+
+
+class ApplyGrid(rumps.App):
+    def __init__(self):
+        super().__init__("apply-grid", title="…", quit_button="Quit")
+        self.state = self._load()
+        self._build_menu()
+        rumps.Timer(self._tick, REFRESH_SECONDS).start()
+
+    # -- data ---------------------------------------------------------------
+    def _load(self) -> model.State:
+        return model.build(events.read(), config.load())
+
+    def _refresh(self) -> None:
+        self.state = self._load()
+        self.title = render_menubar.title(self.state)
+        self._build_menu()
+
+    def _tick(self, _timer) -> None:
+        self._refresh()
+
+    def _sync_async(self) -> None:
+        """Push to the phone without making the click feel slow."""
+        def run():
+            try:
+                publish.sync(self.state, verbose=False, quiet_fail=True)
+            except Exception:
+                pass
+        threading.Thread(target=run, daemon=True).start()
+
+    # -- menu ---------------------------------------------------------------
+    def _build_menu(self) -> None:
+        self.title = render_menubar.title(self.state)
+        items: list = []
+        for line in render_menubar.header_lines(self.state):
+            items.append(rumps.MenuItem(line) if line
+                         else rumps.separator)
+        items.append(rumps.separator)
+
+        items.append(rumps.MenuItem("Log tailored application…",
+                                    callback=self.log_tailored))
+        items.append(rumps.MenuItem("Log quick application…",
+                                    callback=self.log_quick))
+
+        effort = rumps.MenuItem("Log effort")
+        for kind, label in EFFORT_CHOICES:
+            effort.add(rumps.MenuItem(
+                f"{label}  +{self.state.cfg['weights'].get(kind, 0)}",
+                callback=self._effort_cb(kind)))
+        items.append(effort)
+
+        stale = self.state.stale()
+        follow = rumps.MenuItem(f"Follow up on ({len(stale)})" if stale
+                                else "Follow up on")
+        if stale:
+            for app in stale[:12]:
+                quiet = app.days_since_last_event(self.state.today)
+                follow.add(rumps.MenuItem(
+                    f"{app.company} — {quiet}d quiet",
+                    callback=self._followup_cb(app.id)))
+        else:
+            follow.add(rumps.MenuItem("nothing owed right now"))
+        items.append(follow)
+
+        items.append(rumps.MenuItem("Record an outcome…",
+                                    callback=self.record_outcome))
+        items.append(rumps.separator)
+        items.append(rumps.MenuItem("Sync to phone now",
+                                    callback=self.sync_now))
+        items.append(rumps.MenuItem("Refresh", callback=lambda _: self._refresh()))
+        self.menu.clear()
+        self.menu = items
+
+    # -- actions ------------------------------------------------------------
+    def _ask(self, title: str, message: str, placeholder: str = ""):
+        win = rumps.Window(message=message, title=title,
+                           default_text=placeholder, ok="Log",
+                           cancel="Cancel", dimensions=(280, 22))
+        response = win.run()
+        return response.text.strip() if response.clicked else None
+
+    def _log_application(self, kind: str) -> None:
+        raw = self._ask(
+            "Log an application",
+            "Company / Role\n\nAdd  @referral,  @recruiter  or  @event "
+            "to mark how you found it.",
+            "")
+        if not raw:
+            return
+        source = "cold"
+        for tag in ("referral", "recruiter", "event"):
+            if f"@{tag}" in raw.lower():
+                source = tag
+                raw = raw.replace(f"@{tag}", "").replace(f"@{tag.title()}", "")
+        company, _, role = raw.partition("/")
+        company = company.strip()
+        if not company:
+            rumps.alert("Nothing logged", "A company name is required.")
+            return
+        existing = events.read()
+        events.append({
+            "id": events.new_id(existing),
+            "ts": events.now_iso(),
+            "kind": kind,
+            "company": company,
+            "role": role.strip(),
+            "source": source,
+            "url": "",
+            "notes": "",
+        })
+        self._refresh()
+        self._sync_async()
+        rumps.notification(
+            "Logged", f"{company} — +{self.state.cfg['weights'][kind]} pts",
+            f"{self.state.points_on(self.state.today)}/{self.state.target} "
+            f"today · {self.state.streak_days}d streak")
+
+    def log_tailored(self, _) -> None:
+        self._log_application("application_tailored")
+
+    def log_quick(self, _) -> None:
+        self._log_application("application_quick")
+
+    def _effort_cb(self, kind: str):
+        def cb(_):
+            events.append({"ts": events.now_iso(), "kind": kind})
+            self._refresh()
+            self._sync_async()
+        return cb
+
+    def _followup_cb(self, app_id: str):
+        def cb(_):
+            events.append({"ts": events.now_iso(), "kind": "follow_up",
+                           "app_id": app_id})
+            self._refresh()
+            self._sync_async()
+        return cb
+
+    def record_outcome(self, _) -> None:
+        raw = self._ask(
+            "Record an outcome",
+            "company  outcome\n\ne.g.  stripe screen   ·   ramp offer"
+            "   ·   figma rejected",
+            "")
+        if not raw:
+            return
+        from .cli import resolve_kind
+        parts = raw.split()
+        if len(parts) < 2:
+            rumps.alert("Nothing logged", "Give a company and an outcome.")
+            return
+        ref, kind_raw = " ".join(parts[:-1]), parts[-1]
+        try:
+            kind = resolve_kind(kind_raw)
+        except SystemExit as exc:
+            rumps.alert("Unknown outcome", str(exc))
+            return
+        matches = [a for a in self.state.apps.values()
+                   if ref.lower() in a.company.lower() or a.id == ref]
+        live = [a for a in matches if a.is_live] or matches
+        if len(live) != 1:
+            rumps.alert("Which one?", f"{ref!r} matched {len(live)} applications.")
+            return
+        events.append({"ts": events.now_iso(), "kind": kind,
+                       "app_id": live[0].id})
+        self._refresh()
+        self._sync_async()
+
+    def sync_now(self, _) -> None:
+        try:
+            gist = publish.sync(self.state, verbose=False)
+        except SystemExit as exc:
+            rumps.alert("Sync failed", str(exc))
+            return
+        if gist:
+            rumps.notification("Synced", "Phone widget updated", "")
+        else:
+            rumps.alert("Not set up yet",
+                        "Run `ja sync --init` once in a terminal to create the "
+                        "secret gist the phone widget reads.")
+
+
+def main() -> None:
+    ApplyGrid().run()
+
+
+if __name__ == "__main__":
+    main()

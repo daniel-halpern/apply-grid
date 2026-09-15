@@ -1,0 +1,27 @@
+#!/bin/sh
+# Printed on every new shell, so it must be near-free.
+#
+# The grid only changes when the event log changes or the date rolls over, so
+# the rendered string is cached against both and replayed with `cat`. The
+# Python interpreter is never started on the hot path -- interpreter startup
+# alone is most of the budget.
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+DATA="${APPLYGRID_DATA:-$ROOT/data/events.jsonl}"
+[ -f "$DATA" ] || exit 0                      # nothing logged yet: stay silent
+
+DIR="$ROOT/.cache"
+CACHE="$DIR/startup-${COLUMNS:-0}-$(date +%Y%m%d).txt"
+
+if [ -f "$CACHE" ] && [ "$CACHE" -nt "$DATA" ]; then
+  cat "$CACHE"
+  exit 0
+fi
+
+mkdir -p "$DIR"
+rm -f "$DIR"/startup-*.txt 2>/dev/null
+if "$ROOT/bin/ja" grid --compact > "$CACHE.tmp" 2>/dev/null; then
+  mv "$CACHE.tmp" "$CACHE"
+  cat "$CACHE"
+else
+  rm -f "$CACHE.tmp"
+fi
