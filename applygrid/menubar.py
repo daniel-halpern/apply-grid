@@ -99,6 +99,8 @@ class ApplyGrid(rumps.App):
 
         items.append(rumps.MenuItem("Record an outcome…",
                                     callback=self.record_outcome))
+        items.append(rumps.MenuItem("Edit entries…",
+                                    callback=self.open_editor))
 
         # The question a green square makes you ask. Desktop and phone widgets
         # can't answer it -- neither is clickable -- so it lives here.
@@ -308,6 +310,25 @@ class ApplyGrid(rumps.App):
                 "\n".join(lines) or "nothing logged",
                 ok="Close")
         return cb
+
+    def open_editor(self, _) -> None:
+        """Launch the editor as its own process.
+
+        rumps owns this thread's run loop and Tk needs a main thread of its
+        own, so the window cannot be opened in-process.
+        """
+        import os
+        import subprocess
+        import sys
+        root = str(config.REPO_ROOT)
+        env = dict(os.environ, PYTHONPATH=root)
+        try:
+            subprocess.Popen([sys.executable, "-m", "applygrid.editor"],
+                             cwd=root, env=env,
+                             stdout=subprocess.DEVNULL,
+                             stderr=subprocess.DEVNULL)
+        except OSError as exc:
+            rumps.alert("Could not open the editor", str(exc))
 
     def sync_now(self, _) -> None:
         try:

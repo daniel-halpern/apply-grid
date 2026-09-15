@@ -394,6 +394,11 @@ def cmd_phone_script(args) -> None:
     sys.stdout.write(src)
 
 
+def cmd_edit(args) -> None:
+    from . import editor
+    editor.main()
+
+
 def cmd_menubar(args) -> None:
     from . import menubar
     menubar.main()
@@ -507,6 +512,9 @@ def build_parser() -> argparse.ArgumentParser:
     ps = sub.add_parser("phone-script",
                         help="print the Scriptable widget, URL filled in")
     ps.set_defaults(func=cmd_phone_script)
+
+    ed = sub.add_parser("edit", help="open the entry editor window")
+    ed.set_defaults(func=cmd_edit)
 
     mb = sub.add_parser("menubar", help="run the menu bar app")
     mb.set_defaults(func=cmd_menubar)

@@ -96,6 +96,63 @@ class RemovalTest(unittest.TestCase):
         self.assertFalse(self.path.with_name(self.path.name + ".tmp").exists())
 
 
+class EditTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.path = Path(self.tmp.name) / "events.jsonl"
+        os.environ["APPLYGRID_DATA"] = str(self.path)
+        events.append({"id": "a1", "ts": "2026-09-10T12:00:00-04:00",
+                       "kind": "application_tailored", "company": "Strpie",
+                       "role": "SWE"}, self.path)
+        events.append({"ts": "2026-09-11T12:00:00-04:00", "kind": "prep"},
+                      self.path)
+
+    def tearDown(self):
+        os.environ.pop("APPLYGRID_DATA", None)
+        self.tmp.cleanup()
+
+    def _fixed(self):
+        return {"id": "a1", "ts": "2026-09-10T12:00:00-04:00",
+                "kind": "application_tailored", "company": "Stripe",
+                "role": "Backend SWE"}
+
+    def test_replace_rewrites_in_place(self):
+        previous = events.replace_index(0, self._fixed(), self.path)
+        self.assertEqual(previous["company"], "Strpie")
+        rows = events.read(self.path)
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(rows[0]["company"], "Stripe")
+        self.assertEqual(rows[0]["role"], "Backend SWE")
+
+    def test_previous_version_is_archived_as_an_edit(self):
+        events.replace_index(0, self._fixed(), self.path)
+        trash = [json.loads(l) for l
+                 in events.trash_path(self.path).read_text().splitlines() if l]
+        self.assertEqual(len(trash), 1)
+        self.assertIn("_edited_at", trash[0])
+        self.assertNotIn("_removed_at", trash[0])
+
+    def test_an_edit_is_not_restorable_as_a_removal(self):
+        """A plain max() over a missing key yielded "", which matched every
+        edit row and re-appended them as if they had been deleted."""
+        events.replace_index(0, self._fixed(), self.path)
+        self.assertEqual(events.restore_last(self.path), [])
+        self.assertEqual(len(events.read(self.path)), 2)
+
+    def test_removals_still_restore_with_edits_in_the_trash(self):
+        events.replace_index(0, self._fixed(), self.path)   # archives an edit
+        events.remove_indices({1}, self.path)               # then a removal
+        back = events.restore_last(self.path)
+        self.assertEqual([r["kind"] for r in back], ["prep"])
+        self.assertEqual(len(events.read(self.path)), 2)
+
+    def test_out_of_range_is_a_no_op(self):
+        before = self.path.read_text()
+        self.assertIsNone(events.replace_index(99, self._fixed(), self.path))
+        self.assertIsNone(events.replace_index(-1, self._fixed(), self.path))
+        self.assertEqual(self.path.read_text(), before)
+
+
 class DescribeTest(unittest.TestCase):
     def test_names_company_and_role(self):
         row = {"ts": "2026-09-10T14:30:00-04:00",

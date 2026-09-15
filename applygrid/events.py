@@ -115,6 +115,31 @@ def remove_indices(indices: set[int], path: Path | None = None) -> list[dict]:
     return [json.loads(l) for l in gone]
 
 
+def replace_index(index: int, event: dict,
+                  path: Path | None = None) -> dict | None:
+    """Rewrite one line in place, archiving the previous version.
+
+    The old row goes to removed.jsonl tagged `_edited_at` rather than
+    `_removed_at`, so it forms an audit trail without restore_last treating an
+    edit as a removal batch.
+    """
+    path = path or config.data_path()
+    lines = read_lines(path)
+    if not 0 <= index < len(lines):
+        return None
+    previous = json.loads(lines[index])
+    trash = trash_path(path)
+    trash.parent.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now().astimezone().isoformat()
+    with trash.open("a", encoding="utf-8") as fh:
+        archived = dict(previous)
+        archived["_edited_at"] = stamp
+        fh.write(json.dumps(archived, ensure_ascii=False) + "\n")
+    lines[index] = json.dumps(event, ensure_ascii=False)
+    _rewrite(lines, path)
+    return previous
+
+
 def restore_last(path: Path | None = None) -> list[dict]:
     """Put the most recent removal batch back."""
     path = path or config.data_path()
@@ -122,16 +147,23 @@ def restore_last(path: Path | None = None) -> list[dict]:
     if not trash.exists():
         return []
     rows = [json.loads(l) for l in trash.read_text().splitlines() if l.strip()]
-    if not rows:
+    # Only removals are restorable. Edits are archived here too, and a plain
+    # max() over a missing key yields "" -- which matched every edit row and
+    # re-appended them as if they had been deleted.
+    removals = [i for i, r in enumerate(rows) if r.get("_removed_at")]
+    if not removals:
         return []
-    latest = max(r.get("_removed_at", "") for r in rows)
-    back = [r for r in rows if r.get("_removed_at", "") == latest]
-    rest = [r for r in rows if r.get("_removed_at", "") != latest]
-    for row in back:
+    latest = max(rows[i]["_removed_at"] for i in removals)
+    batch = [i for i in removals if rows[i]["_removed_at"] == latest]
+    back = []
+    for i in batch:
+        row = dict(rows[i])
         row.pop("_removed_at", None)
         append(row, path)
+        back.append(row)
+    keep = [r for i, r in enumerate(rows) if i not in set(batch)]
     trash.write_text("".join(json.dumps(r, ensure_ascii=False) + "\n"
-                             for r in rest), encoding="utf-8")
+                             for r in keep), encoding="utf-8")
     return back
 
 
