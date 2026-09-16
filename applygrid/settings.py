@@ -134,6 +134,53 @@ class Settings:
             ttk.Radiobutton(layout, text=label, value=value, variable=anchor,
                             command=self.apply).pack(anchor="w")
 
+        nudges = ttk.LabelFrame(body, text="Daily nudge", padding=12)
+        nudges.pack(fill="x", pady=(12, 0))
+        cfg_nudges = self.cfg.get("nudges", {})
+        enabled = tk.BooleanVar(value=bool(cfg_nudges.get("enabled", True)))
+        self.vars["nudges.enabled"] = enabled
+        ttk.Checkbutton(nudges, text="Notify me when today is still short",
+                        variable=enabled, command=self.apply).pack(anchor="w")
+        ttk.Label(nudges,
+                  text="Only fires when it can still change the outcome, so a "
+                       "day you've\nalready hit target is silent. It names "
+                       "what's actually due rather\nthan repeating itself, and "
+                       "goes quiet for a week if ignored three\ntimes running.",
+                  foreground="#777", justify="left").pack(anchor="w",
+                                                          pady=(2, 8))
+        for key, label, low, high in (
+                ("window_start_hour", "Not before (hour, 24h)", 0, 23),
+                ("window_end_hour", "Not after (hour, 24h)", 1, 24),
+                ("max_per_week", "At most per week", 1, 14)):
+            row = ttk.Frame(nudges)
+            row.pack(fill="x", pady=2)
+            ttk.Label(row, text=label).pack(side="left")
+            var = tk.IntVar(value=int(cfg_nudges.get(key, low)))
+            self.vars[f"nudges.{key}"] = var
+            spin = ttk.Spinbox(row, from_=low, to=high, textvariable=var,
+                               width=5, command=self.apply)
+            spin.pack(side="right")
+            spin.bind("<Return>", lambda _e: self.apply())
+            spin.bind("<FocusOut>", lambda _e: self.apply())
+        weekends = tk.BooleanVar(
+            value=bool(cfg_nudges.get("skip_weekends", False)))
+        self.vars["nudges.skip_weekends"] = weekends
+        ttk.Checkbutton(nudges, text="Stay quiet at weekends",
+                        variable=weekends, command=self.apply).pack(
+            anchor="w", pady=(4, 0))
+        ttk.Label(nudges, text="When there's nothing specific to report, say:"
+                  ).pack(anchor="w", pady=(8, 0))
+        fallback = tk.StringVar(
+            value=str(cfg_nudges.get("fallback_message",
+                                     "Anything worth applying to today?")))
+        self.vars["nudges.fallback_message"] = fallback
+        entry = ttk.Entry(nudges, textvariable=fallback, width=44)
+        entry.pack(anchor="w", pady=(2, 0))
+        entry.bind("<Return>", lambda _e: self.apply())
+        entry.bind("<FocusOut>", lambda _e: self.apply())
+        ttk.Button(nudges, text="Send one now to see how it looks",
+                   command=self.test_nudge).pack(anchor="w", pady=(8, 0))
+
         goals = ttk.LabelFrame(body, text="Targets", padding=12)
         goals.pack(fill="x", pady=(12, 0))
         for key, label, low, high in NUMBERS:
@@ -160,10 +207,19 @@ class Settings:
                 return None
             if name.startswith("surfaces."):
                 values["surfaces"][name.split(".", 1)[1]] = bool(value)
+            elif name.startswith("nudges."):
+                key = name.split(".", 1)[1]
+                values.setdefault("nudges", {})[key] = (
+                    bool(value) if isinstance(value, bool) else value)
             else:
                 values[name] = value
         if int(values["daily_target"]) < 1:
             self.fail("A full day needs at least 1 point.")
+            return None
+        nudges = values.get("nudges", {})
+        if nudges and int(nudges.get("window_end_hour", 24)) <= \
+                int(nudges.get("window_start_hour", 0)):
+            self.fail("The nudge window needs an end later than its start.")
             return None
         if int(values["give_up_after_days"]) <= int(values["stale_after_days"]):
             self.fail("“Cold” must be longer than “chase”, "
@@ -201,6 +257,16 @@ class Settings:
             self.syncer.request()      # debounced, reports back when it lands
         suffix = f" — refreshed {', '.join(notes)}" if notes else ""
         self.say(f"Saved.{suffix}")
+
+    def test_nudge(self) -> None:
+        """Show the message that would fire right now, ignoring the schedule."""
+        from . import events, model, nudge, notify
+        state = model.build(events.read(), self.cfg)
+        preview = nudge.compose(state)
+        if notify.send(preview.title, preview.message, preview.subtitle):
+            self.say(f"Sent: {preview.title}")
+        else:
+            self.fail("Could not send a notification.")
 
     def say(self, message: str) -> None:
         self.status.configure(text=message, foreground="#444")

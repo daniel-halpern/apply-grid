@@ -18,7 +18,7 @@ except ImportError:  # pragma: no cover
         "  cd <repo> && python3 -m venv .venv && "
         ".venv/bin/pip install rumps")
 
-from . import config, events, model, publish, render_menubar
+from . import config, events, model, nudge, publish, render_menubar
 
 REFRESH_SECONDS = 60
 
@@ -49,6 +49,20 @@ class ApplyGrid(rumps.App):
 
     def _tick(self, _timer) -> None:
         self._refresh()
+        self._maybe_nudge()
+
+    def _maybe_nudge(self) -> None:
+        """Checked once a minute; nudge.evaluate decides if anything fires.
+
+        Threaded because delivery shells out to osascript, and the menu must
+        not stall behind it.
+        """
+        def run():
+            try:
+                nudge.maybe_send(self.state)
+            except Exception:  # noqa: BLE001 - a nudge must never break the app
+                pass
+        threading.Thread(target=run, daemon=True).start()
 
     def _sync_async(self) -> None:
         """Push to the phone without making the click feel slow."""

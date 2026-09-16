@@ -41,18 +41,38 @@ class NoInlineSyncTest(unittest.TestCase):
                     f"{name} must use background.Syncer, not a blocking sync")
                 self.assertIn("syncer.request()", body)
 
-    def test_menubar_syncs_only_from_threads(self):
+    # Anything that shells out or hits the network must not run on the menu
+    # bar's own thread. Counting threads is brittle -- this counts blocking
+    # call sites instead, so adding one without a thread fails.
+    BLOCKING_CALLS = ("publish.sync(", "nudge.maybe_send(", "notify.send(")
+
+    def test_every_blocking_menubar_call_has_a_thread(self):
         body = (SRC / "menubar.py").read_text()
-        for line_no, line in enumerate(body.splitlines(), 1):
-            if "publish.sync(" not in line:
-                continue
-            # Every call site must sit inside a nested run()/thread helper.
-            preceding = "\n".join(body.splitlines()[:line_no])
-            self.assertIn("def run():", preceding.rsplit("def ", 2)[0] + "def run():",
-                          f"menubar.py:{line_no} syncs outside a thread")
-        self.assertEqual(body.count("threading.Thread"), 2,
-                         "both the background sync and the explicit "
-                         "'Sync to phone now' must be threaded")
+        blocking = sum(body.count(call) for call in self.BLOCKING_CALLS)
+        threads = body.count("threading.Thread")
+        self.assertGreater(blocking, 0, "the call sites moved; update this test")
+        self.assertGreaterEqual(
+            threads, blocking,
+            f"menubar.py has {blocking} blocking call(s) but only {threads} "
+            f"thread(s) -- one of them runs on the UI thread")
+
+    def test_each_blocking_call_sits_inside_a_worker(self):
+        """A thread count alone wouldn't catch a call outside its worker."""
+        body = (SRC / "menubar.py").read_text()
+        for call in self.BLOCKING_CALLS:
+            start = 0
+            while True:
+                at = body.find(call, start)
+                if at == -1:
+                    break
+                start = at + 1
+                # walk back to the enclosing def; it must be a nested worker
+                before = body[:at]
+                enclosing = before.rfind("        def run():")
+                closer = before.rfind("\n    def ")
+                self.assertGreater(
+                    enclosing, closer,
+                    f"{call} is not inside a worker function")
 
     def test_cli_logging_does_not_wait_on_the_network(self):
         body = (SRC / "cli.py").read_text()

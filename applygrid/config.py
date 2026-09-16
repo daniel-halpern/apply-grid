@@ -25,6 +25,22 @@ DEFAULTS = {
     # the light ramp, where darker green means more; "dark" pins the ramp that
     # brightens, which is what a near-black surface needs.
     "color_scheme": "auto",
+    # A nudge only fires when it can change the outcome, and stops nagging
+    # when ignored. See nudge.py for why each of these exists.
+    "nudges": {
+        "enabled": True,
+        "window_start_hour": 18,     # never outside this window
+        "window_end_hour": 21,
+        "max_per_week": 3,           # a budget, so it can't spam
+        "skip_weekends": False,
+        "backoff_after_ignored": 3,  # consecutive ignores before pausing
+        "backoff_days": 7,
+        # Shown when nothing informative is true. A question rather than a
+        # score: when there is genuinely nothing to report, inventing a
+        # progress figure or reciting the point weights only teaches you to
+        # ignore the notification.
+        "fallback_message": "Anything worth applying to today?",
+    },
     # Each surface can be switched off without uninstalling anything.
     "surfaces": {
         "desktop_widget": True,
@@ -144,9 +160,11 @@ def load() -> dict:
         user = _read_json(path, label)
         weights = user.pop("weights", None) or {}
         surfaces = user.pop("surfaces", None) or {}
+        nudges = user.pop("nudges", None) or {}
         cfg.update(user)
         cfg["weights"].update(weights)
         cfg["surfaces"].update(surfaces)
+        cfg["nudges"].update(nudges)
     if cfg["daily_target"] <= 0:
         raise SystemExit("daily_target must be greater than 0")
     return cfg
