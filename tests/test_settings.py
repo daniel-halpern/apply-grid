@@ -290,3 +290,52 @@ class SettingsWindowTest(unittest.TestCase):
             return out
         self.assertNotIn("Save", labels(self.root))
         self.assertIn("Close", labels(self.root))
+
+
+class PeriodicSyncTest(unittest.TestCase):
+    """A quiet day must still push.
+
+    The payload embeds the date it was built from, so if nothing syncs on a day
+    with no activity, the phone keeps drawing the grid as of the last day
+    something was logged -- today lands on the wrong square.
+    """
+
+    def setUp(self):
+        from datetime import datetime
+        from applygrid import publish
+        self.publish = publish
+        self.now = datetime.fromisoformat("2026-09-18T19:00:00-04:00")
+
+    def _status(self, at, ok=True, skipped=False):
+        return {"at": at, "ok": ok, "skipped": skipped, "detail": ""}
+
+    def test_due_when_nothing_has_ever_synced(self):
+        self.assertTrue(self.publish.sync_due(None, self.now))
+        self.assertTrue(self.publish.sync_due({}, self.now))
+
+    def test_due_when_the_date_rolled_over(self):
+        yesterday = self._status("2026-09-17T23:59:00-04:00")
+        self.assertTrue(self.publish.sync_due(yesterday, self.now))
+
+    def test_not_due_right_after_a_success(self):
+        recent = self._status("2026-09-18T18:55:00-04:00")
+        self.assertFalse(self.publish.sync_due(recent, self.now))
+
+    def test_due_once_a_success_ages_out(self):
+        old = self._status("2026-09-18T12:00:00-04:00")      # 7 hours
+        self.assertTrue(self.publish.sync_due(old, self.now))
+
+    def test_a_failure_retries_sooner_than_a_success(self):
+        failed = self._status("2026-09-18T18:50:00-04:00", ok=False)
+        self.assertFalse(self.publish.sync_due(failed, self.now))   # 10 min
+        failed = self._status("2026-09-18T18:30:00-04:00", ok=False)
+        self.assertTrue(self.publish.sync_due(failed, self.now))    # 30 min
+
+    def test_a_deliberate_skip_is_not_a_failure(self):
+        """Switched off or a fixture run shouldn't cause fast retries."""
+        skipped = self._status("2026-09-18T18:50:00-04:00",
+                               ok=True, skipped=True)
+        self.assertFalse(self.publish.sync_due(skipped, self.now))
+
+    def test_a_corrupt_timestamp_forces_a_sync(self):
+        self.assertTrue(self.publish.sync_due({"at": "not a date"}, self.now))

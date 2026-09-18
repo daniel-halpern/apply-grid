@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import threading
+from datetime import datetime
 
 try:
     import rumps
@@ -50,6 +51,17 @@ class ApplyGrid(rumps.App):
     def _tick(self, _timer) -> None:
         self._refresh()
         self._maybe_nudge()
+        self._maybe_periodic_sync()
+
+    def _maybe_periodic_sync(self) -> None:
+        """Keep the phone's copy current on days with no activity.
+
+        Every other sync is triggered by a write. Without this, a day where
+        nothing is logged never pushes, the payload's `today` stops advancing,
+        and the phone draws a grid frozen on the last day something happened.
+        """
+        if publish.sync_due(publish.last_status(), datetime.now().astimezone()):
+            self._sync_async()
 
     def _maybe_nudge(self) -> None:
         """Checked once a minute; nudge.evaluate decides if anything fires.

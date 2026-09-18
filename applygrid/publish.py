@@ -116,6 +116,34 @@ def _record(ok: bool, detail: str = "", skipped: bool = False) -> None:
         pass
 
 
+SYNC_MAX_AGE_HOURS = 6
+RETRY_AFTER_FAILURE_MINUTES = 15
+
+
+def sync_due(status: dict | None, now: datetime,
+             max_age_hours: int = SYNC_MAX_AGE_HOURS,
+             retry_minutes: int = RETRY_AFTER_FAILURE_MINUTES) -> bool:
+    """Should a periodic sync run?
+
+    The payload embeds the date it was built, so a day with no activity still
+    has to push -- otherwise the phone's grid freezes on the last day anything
+    was logged. A failure retries sooner than a success, so a transient network
+    problem doesn't cost the whole window.
+    """
+    if not status or not status.get("at"):
+        return True
+    try:
+        when = datetime.fromisoformat(status["at"])
+    except (TypeError, ValueError):
+        return True
+    if when.date() < now.date():
+        return True                      # the date rolled over
+    failed = not status.get("ok", True) and not status.get("skipped")
+    window = (timedelta(minutes=retry_minutes) if failed
+              else timedelta(hours=max_age_hours))
+    return (now - when) >= window
+
+
 def last_status() -> dict:
     try:
         return json.loads(status_path().read_text())

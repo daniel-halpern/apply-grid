@@ -82,6 +82,30 @@ async function loadData() {
   return { data: null, stale: true };
 }
 
+function startOfDay(d) {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 12);
+}
+
+// Whole days between the snapshot and the phone's own today. The Mac only
+// pushes when something happens or on a timer, so a sleeping laptop leaves the
+// payload behind -- without this the grid would freeze on the snapshot's date
+// and "today" would point at the wrong square.
+function driftDays(data) {
+  if (!data || !data.today) return 0;
+  const snapshot = startOfDay(new Date(data.today + "T12:00:00"));
+  const today = startOfDay(new Date());
+  const days = Math.round((today - snapshot) / 86400000);
+  return days > 0 ? Math.min(days, 370) : 0;
+}
+
+// Extend the history with empty days so the grid still ends on the real today.
+// Unknown days render as empty, which is also what they mean: nothing reached
+// the phone for them.
+function withDrift(data, drift) {
+  if (!drift) return data;
+  return Object.assign({}, data, { levels: data.levels + "0".repeat(drift) });
+}
+
 function levelsEndingToday(data, days) {
   let out = data.levels.slice(Math.max(0, data.levels.length - days));
   while (out.length < days) out = "0" + out;   // payload shorter than the grid
@@ -101,7 +125,9 @@ function fillCell(ctx, c, r, cell, gap, color) {
 // green ramp flattens to one shade there. Carry intensity in alpha instead.
 const MONO_ALPHA = [0.18, 0.45, 0.65, 0.82, 1.0];
 
-function drawGrid(data, weeks, cell, gap, sch, mono, offsetWeeks) {
+function drawGrid(rawData, weeks, cell, gap, sch, mono, offsetWeeks) {
+  const drift = driftDays(rawData);
+  const data = withDrift(rawData, drift);
   const cols = weeks;
   const ctx = new DrawContext();
   ctx.size = new Size(cols * (cell + gap) - gap, 7 * (cell + gap) - gap);
@@ -133,7 +159,8 @@ function drawGrid(data, weeks, cell, gap, sch, mono, offsetWeeks) {
   }
 
   // Sunday-anchored: row 0 is Sunday and the rest of this week stays blank.
-  const today = new Date(data.today + "T12:00:00");
+  const today = startOfDay(drift ? new Date()
+                                 : new Date(data.today + "T12:00:00"));
   const dow = today.getDay();
   const levels = levelsEndingToday(data, cols * 7 - (6 - dow));
   let idx = levels.length - 1;
@@ -151,7 +178,10 @@ function addRow(widget, sch, data, stale) {
   const row = widget.addStack();
   row.centerAlignContent();
 
-  const big = row.addText(String(data.today_points));
+  // Nothing has reached the phone for today, so today's total is unknown --
+  // showing the snapshot's figure would label an old day as today.
+  const drift = driftDays(data);
+  const big = row.addText(String(drift ? 0 : data.today_points));
   big.font = Font.semiboldSystemFont(20);
   big.textColor = new Color(sch.ink);
 
@@ -161,8 +191,15 @@ function addRow(widget, sch, data, stale) {
 
   row.addSpacer();
 
-  const bits = [`${data.streak_days}d`];
+  const bits = [];
+  if (!drift) bits.push(`${data.streak_days}d`);
   if (data.stale) bits.push(`${data.stale} to chase`);
+  if (drift) {
+    const when = new Date(data.today + "T12:00:00");
+    const month = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                   "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][when.getMonth()];
+    bits.push(`as of ${when.getDate()} ${month}`);
+  }
   if (stale) bits.push("offline");
   const meta = row.addText(bits.join("  \u00B7  "));
   meta.font = Font.systemFont(11);

@@ -90,6 +90,46 @@ class WidgetFamilyTest(unittest.TestCase):
                                f"{family} grid only fills "
                                f"{100 * width / inner[family]:.0f}% of its box")
 
+    def test_a_stale_snapshot_still_advances_the_grid(self):
+        """A sleeping Mac must not freeze the phone's grid on an old date.
+
+        The payload carries the date it was built, so without a drift
+        correction "today" points at the wrong square for as long as the Mac
+        is asleep.
+        """
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("node is not installed")
+        script = r"""
+        const fs = require("fs");
+        // `node -e` shifts argv: the first extra argument lands at index 1.
+        const src = fs.readFileSync(process.argv[1], "utf8");
+        const body = src.slice(src.indexOf("function startOfDay"),
+                               src.indexOf("function fillCell"));
+        const m = new Function(body +
+            "; return {driftDays, withDrift, levelsEndingToday};")();
+        const iso = (d) => d.toISOString().slice(0, 10);
+        const day = (n) => { const d = new Date();
+            d.setDate(d.getDate() - n); return iso(d); };
+        const base = { levels: "0".repeat(369) + "31", today: day(2) };
+        const drift = m.driftDays(base);
+        const win = m.levelsEndingToday(m.withDrift(base, drift), 7);
+        const fresh = m.driftDays({ levels: base.levels, today: day(0) });
+        const future = m.driftDays({ levels: base.levels, today: "2099-01-01" });
+        console.log(JSON.stringify({ drift, win, fresh, future }));
+        """
+        proc = subprocess.run([node, "-e", script, str(WIDGET)],
+                              capture_output=True, text=True, cwd=ROOT)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        got = json.loads(proc.stdout)
+        self.assertEqual(got["drift"], 2, "two-day-old payload must drift by 2")
+        # today unknown, and the snapshot's own day sits two places back
+        self.assertEqual(got["win"][-1], "0")
+        self.assertEqual(got["win"][-3], "1")
+        self.assertEqual(got["win"][-4], "3")
+        self.assertEqual(got["fresh"], 0, "a current payload must not shift")
+        self.assertEqual(got["future"], 0, "a future date must clamp to 0")
+
     def test_lock_screen_families_are_handled_explicitly(self):
         """Not just present -- they must not fall through to a desktop size."""
         src = WIDGET.read_text()
