@@ -27,12 +27,21 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleVersion</key><string>1</string>
   <key>LSMinimumSystemVersion</key><string>12.0</string>
   <!-- Menu bar only: no Dock icon, no window on launch. -->
+  <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>LSUIElement</key><true/>
   <key>NSDocumentsFolderUsageDescription</key>
   <string>Apply Grid reads its own project folder to run.</string>
 </dict>
 </plist>
 PLIST
+
+# The icon. make-icon.py regenerates it from applygrid.palette; the committed
+# .icns means a fresh clone gets an icon without running the generator.
+if [ -f "$ROOT/AppIcon.icns" ]; then
+  cp "$ROOT/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
+else
+  echo "  (no AppIcon.icns - run make-icon.py for an icon)"
+fi
 
 cp "$ROOT/bin/app-launcher" "$APP/Contents/MacOS/apply-grid"
 /usr/bin/sed -i '' "s|__APPLYGRID_ROOT__|$ROOT|g" "$APP/Contents/MacOS/apply-grid"
