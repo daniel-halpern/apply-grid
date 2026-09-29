@@ -19,7 +19,7 @@ except ImportError:  # pragma: no cover
         "  cd <repo> && python3 -m venv .venv && "
         ".venv/bin/pip install rumps")
 
-from . import config, events, model, nudge, publish, render_menubar
+from . import config, events, model, nudge, process, publish, render_menubar
 
 REFRESH_SECONDS = 60
 
@@ -385,7 +385,13 @@ class ApplyGrid(rumps.App):
 
 
 def main() -> None:
-    ApplyGrid().run()
+    import atexit
+    process.write_pid()
+    atexit.register(process.clear_pid)
+    try:
+        ApplyGrid().run()
+    finally:
+        process.clear_pid()
 
 
 if __name__ == "__main__":

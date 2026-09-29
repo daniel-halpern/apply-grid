@@ -16,6 +16,7 @@ step() { printf '  \033[32m•\033[0m %s\n' "$*"; }
 say ""
 say "Apply Grid will make these changes:"
 step "create the Python venv at $ROOT/.venv and install rumps"
+step "build \"Apply Grid.app\" in the project folder"
 step "install the Übersicht widget into:"
 say  "      $UB_WIDGETS/apply-grid.widget/"
 step "install a login agent so the menu bar app starts automatically:"
@@ -58,7 +59,12 @@ else
   say "      brew install --cask ubersicht"
 fi
 
-# 3. menu bar login agent ---------------------------------------------------
+# 3. double-clickable app ---------------------------------------------------
+say "==> building Apply Grid.app"
+"$ROOT/build-app.sh" >/dev/null
+say "    $ROOT/Apply Grid.app  (drag it to your Dock, or open it from Finder)"
+
+# 4. menu bar login agent ---------------------------------------------------
 mkdir -p "$HOME/Library/LaunchAgents"
 cat > "$AGENT" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -92,7 +98,7 @@ launchctl unload "$AGENT" 2>/dev/null || true
 launchctl load "$AGENT"
 say "==> menu bar app loaded (and will start at login)"
 
-# 4. shell startup line -----------------------------------------------------
+# 5. shell startup line -----------------------------------------------------
 if ! grep -qF "$ZMARK" "$ZSHRC" 2>/dev/null; then
   cat >> "$ZSHRC" <<ZEOF
 

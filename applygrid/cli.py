@@ -6,6 +6,7 @@ import argparse
 import json
 import os
 import sys
+import time
 from datetime import date, datetime, time
 
 from . import config, events, model, palette, render_ansi
@@ -395,6 +396,104 @@ def cmd_phone_script(args) -> None:
     sys.stdout.write(src)
 
 
+AGENT_LABEL = "com.applygrid.menubar"
+AGENT_PLIST = "~/Library/LaunchAgents/com.applygrid.menubar.plist"
+
+
+def _agent_running() -> str:
+    """PID of the menu bar app, or "" if it isn't up."""
+    from . import process
+    pid = process.running_pid()
+    return str(pid) if pid else ""
+
+
+def cmd_restart(args) -> None:
+    """Restart the menu bar app.
+
+    launchd's KeepAlive has been observed not to respawn it after a logout, so
+    this doesn't rely on it: kickstart first, then a full reload, then a bare
+    process as a last resort.
+    """
+    import os
+    import subprocess
+    uid = os.getuid()
+    plist = os.path.expanduser(AGENT_PLIST)
+
+    attempts = [
+        (["launchctl", "kickstart", "-k", f"gui/{uid}/{AGENT_LABEL}"],
+         "kickstart"),
+    ]
+    if os.path.exists(plist):
+        attempts.append((["launchctl", "load", plist], "reload"))
+
+    for command, label in attempts:
+        if label == "reload":
+            subprocess.run(["launchctl", "unload", plist],
+                           capture_output=True)
+        subprocess.run(command, capture_output=True, text=True)
+        time.sleep(2)
+        pid = _agent_running()
+        if pid:
+            print(f"menu bar app running (pid {pid}, via {label})")
+            return
+
+    # No agent installed, or launchd refused: just start it detached.
+    env = dict(os.environ, PYTHONPATH=str(config.REPO_ROOT))
+    subprocess.Popen([sys.executable, "-m", "applygrid.menubar"],
+                     cwd=str(config.REPO_ROOT), env=env,
+                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                     start_new_session=True)
+    time.sleep(2)
+    pid = _agent_running()
+    if pid:
+        print(f"menu bar app running (pid {pid}, started directly)")
+        print("  note: no launchd agent, so it won't come back at login.")
+        print("  run install.sh to set that up.")
+    else:
+        raise SystemExit("could not start the menu bar app; try:\n"
+                         f"  {config.REPO_ROOT}/bin/ja menubar")
+
+
+def cmd_status(args) -> None:
+    """Is everything actually running and current?"""
+    from datetime import date
+    from . import publish
+    sch = palette.scheme(getattr(args, "mode", None))
+    ink, muted, r = palette.fg(sch["ink"]), palette.fg(sch["muted"]), palette.RESET
+    cfg = config.load()
+    state = load_state(cfg)
+
+    pid = _agent_running()
+    print(f"\n{ink}Menu bar{r}      "
+          + (f"running (pid {pid})" if pid
+             else f"{muted}not running \u2014 run: ja restart{r}"))
+
+    status = publish.last_status()
+    if not status:
+        line = f"{muted}never synced{r}"
+    elif status.get("skipped"):
+        line = f"{muted}skipped \u2014 {status.get('detail', '')}{r}"
+    elif status.get("ok"):
+        line = f"ok at {status.get('at', '?')}"
+    else:
+        line = f"FAILED \u2014 {status.get('detail', '?')}"
+    print(f"{ink}Phone sync{r}    {line}")
+
+    gist = cfg.get("gist_id")
+    print(f"{ink}Gist{r}          " + (gist if gist else f"{muted}not set up{r}"))
+
+    enabled = [name for name in ("desktop_widget", "terminal", "phone_sync")
+               if config.surface_enabled(name, cfg)]
+    off = [name for name in ("desktop_widget", "terminal", "phone_sync")
+           if name not in enabled]
+    print(f"{ink}Surfaces{r}      {', '.join(enabled) or 'none'}"
+          + (f"   {muted}off: {', '.join(off)}{r}" if off else ""))
+    print(f"{ink}Log{r}           {state.event_count} events, "
+          f"{len(state.apps)} applications \u2014 {config.data_path()}")
+    print(f"{ink}Today{r}         {state.points_on(state.today)}/{state.target}"
+          f" pts \u00b7 {state.streak_days}d streak\n")
+
+
 def cmd_edit(args) -> None:
     from . import editor
     editor.main()
@@ -523,6 +622,13 @@ def build_parser() -> argparse.ArgumentParser:
     ps = sub.add_parser("phone-script",
                         help="print the Scriptable widget, URL filled in")
     ps.set_defaults(func=cmd_phone_script)
+
+    rs2 = sub.add_parser("restart", help="restart the menu bar app")
+    rs2.set_defaults(func=cmd_restart)
+
+    stt = sub.add_parser("status", help="what's running, and is it current")
+    _add_mode(stt)
+    stt.set_defaults(func=cmd_status)
 
     ed = sub.add_parser("edit", help="open the entry editor window")
     ed.set_defaults(func=cmd_edit)

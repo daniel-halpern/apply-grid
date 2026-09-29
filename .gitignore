@@ -11,3 +11,7 @@ data/
 __pycache__/
 *.pyc
 .cache/
+
+# Built by build-app.sh, with this machine's absolute project path
+# stamped into the launcher.
+Apply Grid.app/

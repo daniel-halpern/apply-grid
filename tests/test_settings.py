@@ -57,10 +57,12 @@ class SchemeSelectionTest(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.local = Path(self.tmp.name) / "local.json"
         os.environ["APPLYGRID_LOCAL_CONFIG"] = str(self.local)
+        os.environ["APPLYGRID_DATA"] = str(Path(self.tmp.name) / "e.jsonl")
         os.environ.pop("APPLYGRID_MODE", None)
 
     def tearDown(self):
         os.environ.pop("APPLYGRID_LOCAL_CONFIG", None)
+        os.environ.pop("APPLYGRID_DATA", None)
         self.tmp.cleanup()
 
     def test_pinned_scheme_is_honoured(self):
@@ -96,9 +98,13 @@ class SurfaceToggleTest(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.local = Path(self.tmp.name) / "local.json"
         os.environ["APPLYGRID_LOCAL_CONFIG"] = str(self.local)
+        # APPLYGRID_DATA too: publish._record writes last-sync.json next to
+        # the active log, so without this a test overwrites the real one.
+        os.environ["APPLYGRID_DATA"] = str(Path(self.tmp.name) / "e.jsonl")
 
     def tearDown(self):
         os.environ.pop("APPLYGRID_LOCAL_CONFIG", None)
+        os.environ.pop("APPLYGRID_DATA", None)
         self.tmp.cleanup()
 
     def test_default_is_every_surface_on(self):

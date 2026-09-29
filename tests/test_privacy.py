@@ -121,3 +121,63 @@ class PayloadTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+class TestIsolationTest(unittest.TestCase):
+    """Tests must never write to the real state directory.
+
+    publish._record puts last-sync.json next to the *active* log, so a test
+    that redirects the config but not the data path silently overwrites the
+    real one -- which is exactly what happened: a "phone sync is switched off"
+    result from a fixture landed in the live status file.
+    """
+
+    TEST_FILES = sorted((ROOT / "tests").glob("test_*.py"))
+
+    def test_anything_that_can_write_state_redirects_the_data_path(self):
+        """Only flag files that actually reach code which writes state."""
+        writers = ("publish.sync(", "publish._record(", "events.append(",
+                   "events.remove_indices(", "events.replace_index(",
+                   "nudge.maybe_send(")
+        offenders = []
+        for path in self.TEST_FILES:
+            body = path.read_text()
+            if not any(call in body for call in writers):
+                continue
+            if "APPLYGRID_DATA" not in body:
+                offenders.append(path.name)
+        self.assertEqual(
+            offenders, [],
+            f"{offenders} exercise code that writes state without redirecting "
+            f"APPLYGRID_DATA, so they would write to the real directory")
+
+    def test_the_real_state_directory_is_untouched_by_the_suite(self):
+        """Belt and braces: the live status file must not move during a run."""
+        from applygrid import config as live_config
+        real = Path("~/.local/share/apply-grid/last-sync.json").expanduser()
+        if not real.exists():
+            self.skipTest("no live status file on this machine")
+        before = real.read_text()
+        # exercise the skip path the way the leak originally happened
+        import os
+        import tempfile
+        from datetime import date
+        from applygrid import model, publish
+        with tempfile.TemporaryDirectory() as tmp:
+            keep = {k: os.environ.get(k)
+                    for k in ("APPLYGRID_DATA", "APPLYGRID_LOCAL_CONFIG")}
+            os.environ["APPLYGRID_DATA"] = str(Path(tmp) / "e.jsonl")
+            os.environ["APPLYGRID_LOCAL_CONFIG"] = str(Path(tmp) / "c.json")
+            Path(os.environ["APPLYGRID_LOCAL_CONFIG"]).write_text(
+                json.dumps({"surfaces": {"phone_sync": False}}))
+            try:
+                publish.sync(model.build([], live_config.load(),
+                                         date.today()), verbose=False)
+            finally:
+                for key, value in keep.items():
+                    if value is None:
+                        os.environ.pop(key, None)
+                    else:
+                        os.environ[key] = value
+        self.assertEqual(real.read_text(), before,
+                         "the suite modified the live last-sync.json")

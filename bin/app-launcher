@@ -1,0 +1,55 @@
+#!/bin/sh
+# Launcher for the Apply Grid menu bar app.
+#
+# Resolves the project relative to the bundle when the bundle sits inside the
+# repo, so moving or copying the folder keeps it working. install.sh writes an
+# absolute fallback for a bundle dragged to /Applications.
+set -u
+HERE="$(cd "$(dirname "$0")" && pwd)"
+ROOT="$(cd "$HERE/../../.." 2>/dev/null && pwd)"
+[ -d "$ROOT/applygrid" ] || ROOT="__APPLYGRID_ROOT__"
+
+alert() {
+  /usr/bin/osascript -e "display alert \"Apply Grid\" message \"$1\"" >/dev/null 2>&1
+}
+
+if [ ! -d "$ROOT/applygrid" ]; then
+  alert "Could not find the apply-grid project folder. Re-run install.sh to relink this app."
+  exit 1
+fi
+
+PY="$ROOT/.venv/bin/python3"
+[ -x "$PY" ] || PY="$(command -v python3 || echo /usr/bin/python3)"
+export PYTHONPATH="$ROOT"
+export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
+cd "$ROOT"
+
+# Already running? Ask the app itself, via its pid file. A `pgrep -f` on the
+# module name matches any process whose command line merely mentions it --
+# a shell command or an editor was enough to block the launch.
+if "$PY" -c "from applygrid import process; raise SystemExit(0 if process.running_pid() else 1)" 2>/dev/null; then
+  /usr/bin/osascript -e 'display notification "Already running - look next to the clock." with title "Apply Grid"' >/dev/null 2>&1
+  exit 0
+fi
+
+# Distinguish "deps missing" from "macOS won't let this app read the folder".
+# They look identical from an import failure, and reporting the wrong one sends
+# you off installing packages that are already there.
+CHECK="$("$PY" -c "import rumps" 2>&1)" || CHECK_FAILED=1
+if [ "${CHECK_FAILED:-0}" = "1" ]; then
+  case "$CHECK" in
+    *"Operation not permitted"*|*PermissionError*)
+      alert "macOS is blocking this app from reading the project folder ($ROOT).
+
+Grant it access: System Settings > Privacy & Security > Full Disk Access, then add Apply Grid.app. Folders like Documents, Desktop and Downloads are protected; a project outside them needs no permission."
+      ;;
+    *)
+      alert "Python dependencies are missing. Run install.sh in the project folder.
+
+$CHECK"
+      ;;
+  esac
+  exit 1
+fi
+
+exec "$PY" -m applygrid.menubar

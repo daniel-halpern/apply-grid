@@ -108,7 +108,12 @@ class WidgetFamilyTest(unittest.TestCase):
                                src.indexOf("function fillCell"));
         const m = new Function(body +
             "; return {driftDays, withDrift, levelsEndingToday};")();
-        const iso = (d) => d.toISOString().slice(0, 10);
+        // Local components, not toISOString: that returns UTC, so late in
+        // the evening in a western timezone it is already tomorrow and every
+        // offset comes out one day short.
+        const iso = (d) => `${d.getFullYear()}-` +
+            `${String(d.getMonth() + 1).padStart(2, "0")}-` +
+            `${String(d.getDate()).padStart(2, "0")}`;
         const day = (n) => { const d = new Date();
             d.setDate(d.getDate() - n); return iso(d); };
         const base = { levels: "0".repeat(369) + "31", today: day(2) };
