@@ -34,7 +34,8 @@ EFFORT_CHOICES = [
 
 class ApplyGrid(rumps.App):
     def __init__(self):
-        super().__init__("apply-grid", title="…", quit_button="Quit")
+        # Our own Quit, not rumps' default: see quit_app.
+        super().__init__("apply-grid", title="…", quit_button=None)
         self.state = self._load()
         self._build_menu()
         rumps.Timer(self._tick, REFRESH_SECONDS).start()
@@ -181,6 +182,8 @@ class ApplyGrid(rumps.App):
         items.append(rumps.MenuItem("Sync to phone now",
                                     callback=self.sync_now))
         items.append(rumps.MenuItem("Refresh", callback=lambda _: self._refresh()))
+        items.append(rumps.separator)
+        items.append(rumps.MenuItem("Quit", callback=self.quit_app))
         self.menu.clear()
         self.menu = items
 
@@ -351,7 +354,11 @@ class ApplyGrid(rumps.App):
         import subprocess
         import sys
         root = str(config.REPO_ROOT)
-        env = dict(os.environ, PYTHONPATH=root)
+        # Prepend rather than replace: launched from the app bundle, the
+        # venv's packages arrive via PYTHONPATH, and the window needs AppKit
+        # from them to come to the front.
+        extra = os.environ.get("PYTHONPATH", "")
+        env = dict(os.environ, PYTHONPATH=root + (":" + extra if extra else ""))
         try:
             subprocess.Popen([sys.executable, "-m", module],
                              cwd=root, env=env,
@@ -384,8 +391,48 @@ class ApplyGrid(rumps.App):
         threading.Thread(target=run, daemon=True).start()
 
 
+    def quit_app(self, _) -> None:
+        """Quit, and stay quit until the next login or a click on the app.
+
+        The login agent keeps the app alive, so a plain exit would be undone
+        ten seconds later. Unloading the agent for this session stops that;
+        it loads again by itself at the next login.
+        """
+        import os
+        import subprocess
+        try:
+            subprocess.run(["launchctl", "bootout",
+                            f"gui/{os.getuid()}/{process.AGENT_LABEL}"],
+                           capture_output=True, timeout=5)
+        except (OSError, subprocess.SubprocessError):
+            pass
+        rumps.quit_application()
+
+
+def _hide_dock_icon() -> None:
+    """Menu bar only, however this was started.
+
+    Launched from Apply Grid.app, LSUIElement already does this. Started some
+    other way -- `ja menubar`, an older login agent -- the process is plain
+    Python, which would otherwise put a Python rocket in the Dock.
+    """
+    try:
+        from AppKit import (NSApplication,
+                            NSApplicationActivationPolicyAccessory)
+        NSApplication.sharedApplication().setActivationPolicy_(
+            NSApplicationActivationPolicyAccessory)
+    except Exception:  # noqa: BLE001 - cosmetic
+        pass
+
+
 def main() -> None:
     import atexit
+    lock = process.acquire_lock()
+    if lock is None:
+        # Another copy owns the menu bar. Two of them meant two identical
+        # items next to the clock, and two Dock icons.
+        return
+    _hide_dock_icon()
     process.write_pid()
     atexit.register(process.clear_pid)
     try:

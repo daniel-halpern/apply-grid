@@ -17,6 +17,7 @@ from pathlib import Path
 from . import config
 
 MARKER = "applygrid.menubar"
+AGENT_LABEL = "com.applygrid.menubar"
 
 
 def pid_file() -> Path:
@@ -50,6 +51,33 @@ def running_pid() -> int | None:
     except OSError:
         pass
     return None
+
+
+def lock_file() -> Path:
+    return config.data_path().parent / "menubar.lock"
+
+
+def acquire_lock():
+    """Hold an exclusive lock for the life of the process, or None if taken.
+
+    The pid file alone can't stop two copies: both check it, both see nothing,
+    both start. That happened -- the login agent and a click on the app, four
+    seconds apart. flock is atomic, and the kernel drops it when the process
+    dies, so a crash can't leave it stuck.
+    """
+    import fcntl
+    path = lock_file()
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        handle = open(path, "w")
+    except OSError:
+        return object()       # can't lock at all: don't refuse to run
+    try:
+        fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        handle.close()
+        return None
+    return handle             # keep a reference, or the lock goes with it
 
 
 def write_pid() -> None:

@@ -52,4 +52,18 @@ $CHECK"
   exit 1
 fi
 
+# Hand off to the login agent rather than running the app from here. On
+# macOS 26 a menu bar item from a process this bundle launches is hidden --
+# the app ran, but nothing appeared next to the clock -- while the same code
+# started by launchd shows up. It also means there is only ever one copy: the
+# agent's. bootstrap is a no-op if it's loaded, and reloads it after a Quit.
+AGENT="$HOME/Library/LaunchAgents/com.applygrid.menubar.plist"
+if [ -f "$AGENT" ]; then
+  /bin/launchctl bootstrap "gui/$(id -u)" "$AGENT" 2>/dev/null
+  /bin/launchctl kickstart "gui/$(id -u)/com.applygrid.menubar"
+  exit 0
+fi
+
+# No agent (install.sh not run): start it directly, and say where to look.
+exec 2>>/tmp/applygrid.menubar.log
 exec "$PY" -m applygrid.menubar

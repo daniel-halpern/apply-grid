@@ -9,6 +9,11 @@ UB_WIDGETS="$HOME/Library/Application Support/Übersicht/widgets"
 AGENT="$HOME/Library/LaunchAgents/com.applygrid.menubar.plist"
 ZSHRC="$HOME/.zshrc"
 ZMARK="# >>> apply-grid >>>"
+# /Applications, so Spotlight and Launchpad find it and there is exactly one
+# copy for macOS to grant permissions to. ~/Applications if that's not writable.
+APP_DIR="/Applications"
+[ -w "$APP_DIR" ] || APP_DIR="$HOME/Applications"
+APP="$APP_DIR/Apply Grid.app"
 
 say()  { printf '%s\n' "$*"; }
 step() { printf '  \033[32m•\033[0m %s\n' "$*"; }
@@ -16,7 +21,7 @@ step() { printf '  \033[32m•\033[0m %s\n' "$*"; }
 say ""
 say "Apply Grid will make these changes:"
 step "create the Python venv at $ROOT/.venv and install rumps"
-step "build \"Apply Grid.app\" in the project folder"
+step "build \"Apply Grid.app\" into $APP_DIR"
 step "install the Übersicht widget into:"
 say  "      $UB_WIDGETS/apply-grid.widget/"
 step "install a login agent so the menu bar app starts automatically:"
@@ -61,8 +66,11 @@ fi
 
 # 3. double-clickable app ---------------------------------------------------
 say "==> building Apply Grid.app"
-"$ROOT/build-app.sh" >/dev/null
-say "    $ROOT/Apply Grid.app  (drag it to your Dock, or open it from Finder)"
+mkdir -p "$APP_DIR"
+"$ROOT/build-app.sh" "$APP" >/dev/null
+# Re-register so Finder and the Dock pick up a changed icon straight away.
+/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "$APP" 2>/dev/null || true
+say "    $APP  (drag it to your Dock, or find it in Spotlight)"
 
 # 4. menu bar login agent ---------------------------------------------------
 mkdir -p "$HOME/Library/LaunchAgents"
@@ -73,6 +81,10 @@ cat > "$AGENT" <<PLIST
 <plist version="1.0">
 <dict>
   <key>Label</key><string>com.applygrid.menubar</string>
+  <!-- The agent is the only thing that runs the menu bar app; clicking
+       Apply Grid.app just kickstarts this. Two starters meant two copies,
+       and on macOS 26 a copy launched from the app bundle has its menu bar
+       item hidden. -->
   <key>ProgramArguments</key>
   <array>
     <string>$ROOT/.venv/bin/python3</string>
