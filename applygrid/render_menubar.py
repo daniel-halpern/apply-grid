@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from datetime import timedelta
 
-from .model import State, bucket
+from .model import State
 
 # Equal-width Block Elements, ascending. Index by intensity level 0-4.
 SPARK = ("▁", "▂", "▄", "▆", "█")
@@ -22,7 +22,7 @@ def spark(state: State, days: int) -> str:
     out = []
     for i in range(days):
         day = start + timedelta(days=i)
-        out.append(SPARK[bucket(state.points_on(day), state.target)])
+        out.append(SPARK[state.level(state.points_on(day))])
     return "".join(out)
 
 

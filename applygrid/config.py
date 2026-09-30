@@ -21,6 +21,10 @@ DEFAULTS = {
     # blank. "sunday": GitHub's layout, which leaves a ragged notch
     # at the bottom right for the rest of the current week.
     "week_anchor": "today",
+    # How a day's points become one of the four greens.
+    # "relative": against your own busy days, so the grid always uses its
+    # full range. "target": against daily_target, capped at 2x.
+    "color_scale": "relative",
     # "auto" follows the host (dark terminal, phone appearance). "light" pins
     # the light ramp, where darker green means more; "dark" pins the ramp that
     # brightens, which is what a near-black surface needs.

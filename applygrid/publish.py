@@ -17,7 +17,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 from . import config
-from .model import State, bucket
+from .model import State
 
 GIST_FILENAME = "applygrid.json"
 HISTORY_DAYS = 371          # 53 weeks, what the widget can show at most
@@ -27,7 +27,7 @@ def payload(state: State) -> dict:
     """Aggregates only. Read this function before trusting the sync."""
     start = state.today - timedelta(days=HISTORY_DAYS - 1)
     levels = "".join(
-        str(bucket(state.points_on(start + timedelta(days=i)), state.target))
+        str(state.level(state.points_on(start + timedelta(days=i))))
         for i in range(HISTORY_DAYS))
     funnel = state.funnel
     return {

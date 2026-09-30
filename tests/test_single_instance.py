@@ -91,6 +91,12 @@ class AgentTest(unittest.TestCase):
         self.assertLess(handoff, direct)
         self.assertIn("exit 0", src[handoff:direct])
 
+    def test_restart_can_wait(self):
+        """`ja restart` sleeps between attempts. A `from datetime import time`
+        once replaced the time module and crashed it on the first sleep."""
+        from applygrid import cli
+        self.assertTrue(callable(getattr(cli.time, "sleep", None)))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -22,10 +22,10 @@ const CACHE = "apply-grid-cache.json";
 
 // Same validated single-hue ordinal ramp as every other surface.
 const RAMP = {
-  dark:  { surface: "#0d1117", empty: "#21262d", ink: "#e6edf3", muted: "#8b949e",
-           levels: ["#0c7202", "#439d3b", "#70ca68", "#9ef994"] },
+  dark:  { surface: "#0d1117", empty: "#161b22", ink: "#e6edf3", muted: "#8b949e",
+           levels: ["#0e4429", "#006d32", "#26a641", "#39d353"] },
   light: { surface: "#ffffff", empty: "#ebedf0", ink: "#1f2328", muted: "#636c76",
-           levels: ["#62c958", "#4ab341", "#319c28", "#108604"] },
+           levels: ["#9be9a8", "#40c463", "#30a14e", "#216e39"] },
 };
 
 function scheme(data) {

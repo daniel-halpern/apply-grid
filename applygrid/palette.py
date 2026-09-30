@@ -1,17 +1,13 @@
 """The one place colors are defined, so all four surfaces agree.
 
-The ramp is a single-hue ordinal scale (OKLCH hue 142, four monotone lightness
-steps) validated with the dataviz skill's `validate_palette.js --ordinal`:
-monotone lightness, adjacent delta-L >= 0.06, light end >= 2:1 on its surface,
-single hue. Both modes pass all four checks.
+GitHub's own contribution-graph colors, exactly, in both modes.
 
-Deliberately NOT GitHub's own greens: theirs fail the light-end check
-(#0e4429 is 1.69:1 on their dark surface, #9be9a8 is 1.44:1 on white), which is
-why their faintest squares are so hard to tell from empty ones. Same look,
-fixed floor.
-
-Dark mode is its own set of steps validated against the dark surface, not an
-inverted copy of the light ramp.
+These were once custom ramps, because GitHub's faintest squares are hard to
+tell from empty ones (#9be9a8 is 1.44:1 on white, #0e4429 is 1.69:1 on
+their dark surface) and a validated ramp fixed that. But that ramp had no
+genuinely light green, so a quiet day never looked light, and the grid read
+as uniformly dark. GitHub's range -- pale mint to forest green -- is the
+point, and the look everyone already knows how to read.
 """
 
 from __future__ import annotations
@@ -20,9 +16,9 @@ import os
 
 DARK = {
     "surface": "#0d1117",
-    "empty": "#21262d",
+    "empty": "#161b22",
     # level 1..4
-    "levels": ["#0c7202", "#439d3b", "#70ca68", "#9ef994"],
+    "levels": ["#0e4429", "#006d32", "#26a641", "#39d353"],
     "ink": "#e6edf3",
     "muted": "#8b949e",
 }
@@ -30,7 +26,7 @@ DARK = {
 LIGHT = {
     "surface": "#ffffff",
     "empty": "#ebedf0",
-    "levels": ["#62c958", "#4ab341", "#319c28", "#108604"],
+    "levels": ["#9be9a8", "#40c463", "#30a14e", "#216e39"],
     "ink": "#1f2328",
     "muted": "#636c76",
 }

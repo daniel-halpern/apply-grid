@@ -250,3 +250,55 @@ class GridTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+class RelativeScaleTest(unittest.TestCase):
+    """Colour against your own busy days, the way GitHub does it."""
+
+    def _state(self, points_by_days_ago: dict[int, int], scale="relative"):
+        state = model.State(cfg=dict(CFG, color_scale=scale), today=TODAY)
+        state.daily_points = {days_ago(n): p
+                              for n, p in points_by_days_ago.items()}
+        return state
+
+    def test_spreads_across_all_four_greens(self):
+        """The real log that prompted this: target 1, days of 1-7 points.
+
+        Against the target every active day was level 3 or 4 -- two shades.
+        """
+        days = {13: 1, 12: 1, 9: 2, 7: 1, 6: 1, 3: 7, 1: 6, 0: 2}
+        state = self._state(days)
+        self.assertEqual(state.scale_top, 7)
+        levels = {p: state.level(p) for p in days.values()}
+        self.assertEqual(levels, {1: 1, 2: 2, 6: 4, 7: 4})
+        self.assertEqual(state.level(4), 3)
+        self.assertEqual(state.level(0), 0)
+
+        flat = self._state(days, scale="target")
+        flat.cfg["daily_target"] = 1
+        self.assertEqual({flat.level(p) for p in days.values()}, {3, 4})
+
+    def test_one_huge_day_does_not_wash_out_the_rest(self):
+        days = {n: 3 for n in range(1, 20)}
+        days[0] = 40
+        state = self._state(days)
+        self.assertEqual(state.scale_top, 3)
+        self.assertEqual(state.level(3), 4)
+        self.assertEqual(state.level(40), 4)
+
+    def test_only_the_past_year_counts(self):
+        state = self._state({400: 50, 2: 4})
+        self.assertEqual(state.scale_top, 4)
+
+    def test_empty_log(self):
+        state = self._state({})
+        self.assertEqual(state.scale_top, 1)
+        self.assertEqual(state.level(0), 0)
+
+    def test_any_effort_is_visible(self):
+        self.assertEqual(model.relative_bucket(1, 100), 1)
+        self.assertEqual(model.relative_bucket(0, 100), 0)
+
+    def test_target_setting_keeps_the_old_scale(self):
+        state = self._state({0: 3}, scale="target")
+        self.assertEqual(state.level(3), model.bucket(3, 3))

@@ -45,11 +45,21 @@ class RampDirectionTest(unittest.TestCase):
                          f"dark ramp is not monotonically brightening: {levels}")
 
     def test_empty_cell_is_never_confusable_with_level_one(self):
+        """No closer than GitHub's own graph.
+
+        The palette is GitHub's, whose faintest green is close to its empty
+        square in luminance (1.23:1 light, 1.55:1 dark) and is told apart
+        mostly by hue -- a known weakness, accepted for the look. This floor
+        stops any future edit from making it worse.
+        """
+        def ratio(a, b):
+            hi, lo = sorted((luminance(a), luminance(b)), reverse=True)
+            return (hi + 0.05) / (lo + 0.05)
         for name, sch in (("light", palette.LIGHT), ("dark", palette.DARK)):
             with self.subTest(mode=name):
-                gap = abs(luminance(sch["empty"]) - luminance(sch["levels"][0]))
-                self.assertGreater(gap, 0.05,
-                                   f"{name}: empty and level 1 are too close")
+                self.assertGreaterEqual(
+                    ratio(sch["empty"], sch["levels"][0]), 1.2,
+                    f"{name}: empty and level 1 are too close")
 
 
 class SchemeSelectionTest(unittest.TestCase):
@@ -265,6 +275,11 @@ class SettingsWindowTest(unittest.TestCase):
         self.win.vars["color_scheme"].set("light")
         self.win.apply()
         self.assertEqual(self._saved()["color_scheme"], "light")
+
+    def test_colour_scale_writes_without_a_save_click(self):
+        self.win.vars["color_scale"].set("target")
+        self.win.apply()
+        self.assertEqual(self._saved()["color_scale"], "target")
 
     def test_targets_write_without_a_save_click(self):
         self.win.vars["daily_target"].set(7)

@@ -6,8 +6,10 @@ against a fixture and cheap enough to run on shell startup.
 
 from __future__ import annotations
 
+import math
 from collections import defaultdict
 from dataclasses import dataclass, field
+from functools import cached_property
 from datetime import date, timedelta
 
 from . import config, events as ev_mod
@@ -51,6 +53,28 @@ class State:
     @property
     def target(self) -> int:
         return self.cfg["daily_target"]
+
+    # -- colour -------------------------------------------------------------
+    def level(self, points: int) -> int:
+        """Intensity level 0-4 for one day, per the color_scale setting."""
+        if self.cfg.get("color_scale", "relative") == "target":
+            return bucket(points, self.target)
+        return relative_bucket(points, self.scale_top)
+
+    @cached_property
+    def scale_top(self) -> int:
+        """The points that earn the darkest green under the relative scale.
+
+        Your busy days over the past year -- the 90th percentile of active
+        days rather than the single maximum, so one unusual day can't wash
+        every other day out to the palest green.
+        """
+        since = self.today - timedelta(days=365)
+        active = sorted(p for d, p in self.daily_points.items()
+                        if p > 0 and since < d <= self.today)
+        if not active:
+            return 1
+        return active[math.ceil(0.9 * len(active)) - 1]
 
     @property
     def weekly_target(self) -> int:
@@ -276,6 +300,19 @@ def bucket(points: int, target: int) -> int:
     return 4
 
 
+def relative_bucket(points: int, top: int) -> int:
+    """Intensity level 0-4, as a share of your own busy days.
+
+    What GitHub does: the grid spreads across all four greens whatever your
+    volume. With a fixed target, a low target put nearly every active day on
+    the top two levels, and the grid looked flat. Anything at or above `top`
+    is the darkest green.
+    """
+    if points <= 0:
+        return 0
+    return min(4, max(1, math.ceil(4 * points / max(top, 1))))
+
+
 @dataclass
 class Cell:
     day: date
@@ -308,7 +345,7 @@ def grid(state: State, weeks: int = 53,
             for row in range(7):
                 day = start + timedelta(days=7 * col + row)
                 pts = state.points_on(day)
-                column.append(Cell(day, pts, bucket(pts, state.target)))
+                column.append(Cell(day, pts, state.level(pts)))
             columns.append(column)
         return columns
 
@@ -323,7 +360,7 @@ def grid(state: State, weeks: int = 53,
                 column.append(None)
             else:
                 pts = state.points_on(day)
-                column.append(Cell(day, pts, bucket(pts, state.target)))
+                column.append(Cell(day, pts, state.level(pts)))
         columns.append(column)
     return columns
 

@@ -7,7 +7,7 @@ import json
 import os
 import sys
 import time
-from datetime import date, datetime, time
+from datetime import date, datetime, time as clock_time
 
 from . import config, events, model, palette, render_ansi
 
@@ -56,7 +56,7 @@ def ts_for(day_str: str | None) -> str:
         day = date.fromisoformat(day_str)
     except ValueError:
         raise SystemExit(f"--date must be YYYY-MM-DD, got {day_str!r}")
-    return datetime.combine(day, time(12, 0)).astimezone() \
+    return datetime.combine(day, clock_time(12, 0)).astimezone() \
         .replace(microsecond=0).isoformat()
 
 

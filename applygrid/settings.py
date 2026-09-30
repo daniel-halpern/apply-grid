@@ -21,6 +21,11 @@ SCHEMES = (
     ("dark", "Dark — brighter green means more"),
 )
 
+SCALES = (
+    ("relative", "Compared with your busiest days — uses every shade"),
+    ("target", "Compared with your daily target (darkest at 2× target)"),
+)
+
 ANCHORS = (
     ("today", "Today in the bottom-right corner, no gaps"),
     ("sunday", "GitHub's layout (leaves a notch for the rest of this week)"),
@@ -113,6 +118,12 @@ class Settings:
 
         colours = ttk.LabelFrame(body, text="Colour", padding=12)
         colours.pack(fill="x", pady=(12, 0))
+        scale = tk.StringVar(value=self.cfg.get("color_scale", "relative"))
+        self.vars["color_scale"] = scale
+        for value, label in SCALES:
+            ttk.Radiobutton(colours, text=label, value=value, variable=scale,
+                            command=self.apply).pack(anchor="w")
+        ttk.Separator(colours).pack(fill="x", pady=8)
         scheme = tk.StringVar(value=self.cfg.get("color_scheme", "auto"))
         self.vars["color_scheme"] = scheme
         for value, label in SCHEMES:
