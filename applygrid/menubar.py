@@ -39,8 +39,25 @@ class ApplyGrid(rumps.App):
 
     def _refresh(self) -> None:
         self.state = self._load()
-        self.title = render_menubar.title(self.state)
         self._build_menu()
+
+    def _show_title(self) -> None:
+        """Drawn sparkline beside the text; the typed one if drawing fails."""
+        try:
+            from . import menubar_image
+            image = menubar_image.bars(render_menubar.levels(self.state, 7))
+        except Exception:  # noqa: BLE001 - never lose the title over a picture
+            self._icon, self._icon_nsimage = None, None
+            self.title = render_menubar.title(self.state)
+            return
+        # rumps only takes icons from files; its status item reads this.
+        self._icon, self._icon_nsimage = "sparkline", image
+        try:
+            self._nsapp.setStatusBarIcon()
+        except AttributeError:
+            pass                  # not running yet: picked up at launch
+        # The status item butts the title right up against the image.
+        self.title = " " + render_menubar.title(self.state, show_spark=False)
 
     def _tick(self, _timer) -> None:
         self._refresh()
@@ -81,11 +98,14 @@ class ApplyGrid(rumps.App):
 
     # -- menu ---------------------------------------------------------------
     def _build_menu(self) -> None:
-        self.title = render_menubar.title(self.state)
+        self._show_title()
         items: list = []
-        for line in render_menubar.header_lines(self.state):
-            items.append(rumps.MenuItem(line) if line
-                         else rumps.separator)
+        for line in render_menubar.header_lines(self.state, text_spark=False):
+            if line == render_menubar.SPARK_ROW:
+                items.append(self._spark_row())
+            else:
+                items.append(rumps.MenuItem(line) if line
+                             else rumps.separator)
         status = publish.last_status()
         if status and not status.get("ok") and not status.get("skipped"):
             detail = str(status.get("detail", "?"))[:46]
@@ -199,6 +219,17 @@ class ApplyGrid(rumps.App):
         items.append(rumps.MenuItem("Quit", callback=self.quit_app))
         self.menu.clear()
         self.menu = items
+
+    def _spark_row(self):
+        levels = render_menubar.levels(self.state, 30)
+        try:
+            from . import menubar_image
+            item = rumps.MenuItem(render_menubar.SPARK_ROW)
+            item._menuitem.setImage_(menubar_image.bars(levels))
+        except Exception:  # noqa: BLE001
+            text = "".join(render_menubar.SPARK[lv] for lv in levels)
+            item = rumps.MenuItem(f"{render_menubar.SPARK_ROW}  {text}")
+        return item
 
     # -- actions ------------------------------------------------------------
     def _ask(self, title: str, message: str, placeholder: str = ""):

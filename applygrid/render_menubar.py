@@ -1,9 +1,10 @@
 """Text for the menu bar item and its dropdown.
 
 macOS menus use a proportional font, so a 7-row grid would render ragged here.
-Instead this uses Block Elements characters, which share one advance width and
-so line up: a 7-day sparkline in the always-visible title, and a longer strip
-in the dropdown. The full color grid lives on the desktop widget, the phone,
+Instead there's a sparkline: 7 days in the always-visible title, 30 in the
+dropdown. The menu bar app draws it as an image (menubar_image.py); the Block
+Elements text version here is the fallback, because the menu bar's font gives
+those characters uneven widths and baselines. The full color grid lives on the desktop widget, the phone,
 and the terminal, which can all render color properly.
 """
 
@@ -17,13 +18,16 @@ from .model import State
 SPARK = ("▁", "▂", "▄", "▆", "█")
 
 
-def spark(state: State, days: int) -> str:
+def levels(state: State, days: int) -> list[int]:
+    """Intensity level for each of the last `days` days, oldest first."""
     start = state.today - timedelta(days=days - 1)
-    out = []
-    for i in range(days):
-        day = start + timedelta(days=i)
-        out.append(SPARK[state.level(state.points_on(day))])
-    return "".join(out)
+    return [state.level(state.points_on(start + timedelta(days=i)))
+            for i in range(days)]
+
+
+def spark(state: State, days: int) -> str:
+    """The same as text, for anywhere an image can't go."""
+    return "".join(SPARK[level] for level in levels(state, days))
 
 
 def title(state: State, show_spark: bool = True) -> str:
@@ -40,8 +44,15 @@ def title(state: State, show_spark: bool = True) -> str:
     return " ".join(bits)
 
 
-def header_lines(state: State) -> list[str]:
-    """Disabled rows at the top of the dropdown -- the glanceable summary."""
+SPARK_ROW = "last 30 days"
+
+
+def header_lines(state: State, text_spark: bool = True) -> list[str]:
+    """Disabled rows at the top of the dropdown -- the glanceable summary.
+
+    With text_spark=False the sparkline row is just SPARK_ROW, for the menu
+    bar app to draw the bars as an image beside it.
+    """
     funnel = state.funnel
     offer_word = "offer" if funnel["offer"] == 1 else "offers"
     lines = [
@@ -50,7 +61,7 @@ def header_lines(state: State) -> list[str]:
         f"{state.streak_days}d streak   ·   best {state.best_streak_days}d"
         f"   ·   {state.week_streak} weeks on target",
         "",
-        f"last 30 days  {spark(state, 30)}",
+        f"{SPARK_ROW}  {spark(state, 30)}" if text_spark else SPARK_ROW,
         "",
         f"{funnel['applied']} applied  →  {funnel['screen']} "
         f"{'screen' if funnel['screen'] == 1 else 'screens'}"
