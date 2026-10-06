@@ -33,8 +33,9 @@ completely gray. Points instead:
 |---|---|---|---|---|
 | tailored application | 3 | | follow-up | 1 |
 | quick application | 1 | | interview | 5 |
-| referral ask | 2 | | resume / portfolio work | 2 |
-| cold outreach | 2 | | interview prep | 1 |
+| online assessment / video | 3 | | resume / portfolio work | 2 |
+| referral ask | 2 | | interview prep | 1 |
+| cold outreach | 2 | | | |
 
 **Shades are relative to your own busy days**, the way GitHub's are, so the
 grid always uses its full range: quiet days are pale, your biggest days are
@@ -51,8 +52,11 @@ other side decided.
 ## Requirements
 
 - macOS 12 or later
-- Python 3.10+ (the [python.org](https://www.python.org/downloads/macos/)
-  installer or Homebrew)
+- Python 3.10+ with Tk 8.6.13 or newer. Older Tk, which python.org's 3.10
+  and 3.11 installers ship, holds clicks and keystrokes in the windows until
+  the mouse moves, so everything feels laggy. The easy route is Homebrew:
+  `brew install python-tk@3.13`. `install.sh` picks a suitable Python for you
+  and says so if it can't find one.
 - For the desktop widget: [Übersicht](https://tracesof.net/uebersicht/),
   `brew install --cask ubersicht`
 - For the iPhone widget: the free [Scriptable](https://scriptable.app) app, and
@@ -89,10 +93,14 @@ problem. Cloning somewhere like `~/Developer` avoids it entirely.
 Click the menu bar item:
 
 - **Log tailored application…** / **Log quick application…**: type
-  `Stripe / Backend SWE`. Add `@referral`, `@recruiter` or `@event` to record
-  how you found it.
-- **Log effort**: prep, resume work, a referral ask, cold outreach, an
-  interview.
+  `Stripe / Backend SWE`. It's recorded as coming from your usual source
+  (LinkedIn unless you change it in Settings); add `@linkedin`, `@portal`,
+  `@uni`, `@referral` or `@recruiter` when it came from somewhere else.
+- **Log online assessment**: pick the application. Being sent an OA or a
+  video interview means you got past the first filter, so this also marks
+  that application as screened. No second entry needed.
+- **Log effort**: prep, resume work, a referral ask, an interview. Hide the
+  ones you never do in Settings.
 - **Follow up on**: applications that have gone quiet. Click one to log the
   follow-up.
 - **Record an outcome…**: a screen, an onsite, an offer, a rejection.
@@ -112,9 +120,11 @@ again.
 ja                                  # the grid
 ja add "Stripe / Backend SWE"       # a tailored application (+3)
 ja add "Ramp / SWE" --quick         # an easy apply (+1)
+ja add "Figma / SWE @uni"           # found it on your uni's job portal
 ja add "Figma / SWE" --source referral
 ja add                              # no arguments: asks you step by step
 ja event prep                       # standalone effort (+1)
+ja event oa --app doordash          # an online assessment (+3), marks it screened
 ja event screen --app stripe        # an outcome, matched by company
 ja event followup --app 7b77        # ...or by id
 ja on 2026-09-01                    # what you did that day
@@ -156,6 +166,9 @@ button.
 
 - **Surfaces**: turn off the desktop widget, the terminal grid or the phone
   sync independently.
+- **Logging**: where you usually find jobs (LinkedIn, a job portal, your
+  uni's portal, ...), so most entries need no tag, and which efforts appear
+  under Log effort.
 - **Colour**: shade against your busy days or against your daily target, and
   light, dark or follow-the-system colours. In light mode darker green means
   more; in dark mode, as on GitHub, brighter green does.

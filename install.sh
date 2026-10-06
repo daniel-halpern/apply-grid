@@ -35,9 +35,42 @@ read -r -p "Proceed? [y/N] " reply
 [[ "$reply" == [yY] ]] || { say "nothing changed."; exit 0; }
 
 # 1. venv -------------------------------------------------------------------
+# The editor and Settings windows are Tk. Tk before 8.6.13 holds clicks and
+# keystrokes on recent macOS until the mouse moves, which makes every window
+# feel like it's lagging -- and it's what python.org's 3.10/3.11 builds ship.
+tk_ok() {
+  "$1" -c 'import sys, tkinter
+v = tuple(int(x) for x in tkinter.Tcl().call("info", "patchlevel").split(".")[:3])
+sys.exit(0 if v >= (8, 6, 13) else 1)' 2>/dev/null
+}
+pick_python() {
+  for name in python3.13 python3.12 python3.14 python3; do
+    for dir in /opt/homebrew/bin /usr/local/bin ""; do
+      cand="${dir:+$dir/}$name"
+      command -v "$cand" >/dev/null 2>&1 || continue
+      "$cand" -c 'import sys; sys.exit(sys.version_info < (3, 10))' \
+        2>/dev/null || continue
+      tk_ok "$cand" && { echo "$cand"; return 0; }
+    done
+  done
+  return 1
+}
+
+if [ -x "$ROOT/.venv/bin/python3" ] && ! tk_ok "$ROOT/.venv/bin/python3"; then
+  if pick_python >/dev/null; then
+    say "==> rebuilding the venv: its Tk is too old (windows would lag)"
+    rm -rf "$ROOT/.venv"
+  fi
+fi
 if [ ! -x "$ROOT/.venv/bin/python3" ]; then
-  say "==> creating venv"
-  python3 -m venv "$ROOT/.venv"
+  PYTHON="$(pick_python || true)"
+  if [ -z "$PYTHON" ]; then
+    PYTHON=python3
+    say "==> no Python with Tk 8.6.13+ found; the windows will lag."
+    say "    Fix:  brew install python-tk@3.13   then re-run this script."
+  fi
+  say "==> creating venv with $PYTHON"
+  "$PYTHON" -m venv "$ROOT/.venv"
 fi
 "$ROOT/.venv/bin/pip" install --quiet --upgrade pip
 "$ROOT/.venv/bin/pip" install --quiet rumps

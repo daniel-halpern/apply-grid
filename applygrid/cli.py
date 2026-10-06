@@ -18,6 +18,10 @@ ALIASES = {
     "referral": "referral_ask",
     "outreach": "cold_outreach",
     "cold": "cold_outreach",
+    "oa": "online_assessment",
+    "assessment": "online_assessment",
+    "video": "online_assessment",
+    "hirevue": "online_assessment",
     "followup": "follow_up",
     "follow-up": "follow_up",
     "interview": "interview",
@@ -105,8 +109,20 @@ def _guided_add() -> tuple[str, str, str, str]:
     kind = _prompt("Tailored or quick? (t/q)", "t")
     kind = ("application_quick" if kind.lower().startswith("q")
             else "application_tailored")
-    source = _prompt("How did you find it? cold/referral/recruiter/event", "cold")
-    return company, role, kind, source
+    default = config.load().get("default_source", "linkedin")
+    raw = _prompt("Where did you find it? "
+                  "linkedin/portal/uni/referral/recruiter/event", default)
+    return company, role, kind, _source_from(raw, default)
+
+
+def _source_from(word: str, default: str) -> str:
+    """A source given on its own, e.g. --source uni. Unknown is an error."""
+    if word.lower() in config.SOURCES:
+        return word.lower()
+    if word.lower() not in config.SOURCE_TAGS:
+        raise SystemExit(f"unknown source {word!r}\n"
+                         f"known: {', '.join(config.SOURCE_TAGS)}")
+    return config.SOURCE_TAGS[word.lower()]
 
 
 def cmd_add(args) -> None:
@@ -117,9 +133,13 @@ def cmd_add(args) -> None:
         company, role, kind, source = _guided_add()
         _write_application(company, role, kind, source, args)
         return
+    default = config.load().get("default_source", "linkedin")
+    raw, source = config.parse_source(raw, default)
+    if args.source:
+        source = _source_from(args.source, default)
     company, _, role = raw.partition("/")
     kind = "application_quick" if args.quick else "application_tailored"
-    _write_application(company.strip(), role.strip(), kind, args.source, args)
+    _write_application(company.strip(), role.strip(), kind, source, args)
 
 
 def _write_application(company: str, role: str, kind: str, source: str,
@@ -216,9 +236,10 @@ def cmd_stats(args) -> None:
         print(f"  {muted}{'source':<12}{'applied':>8}{'screens':>9}{'rate':>7}{r}")
         for src, n, adv in state.channels:
             rate = f"{100 * adv / n:.0f}%" if n else "--"
-            print(f"  {src:<12}{n:>8}{adv:>9}{rate:>7}")
+            label = config.SOURCES.get(src, src)
+            print(f"  {label:<12}{n:>8}{adv:>9}{rate:>7}")
         print(f"  {muted}referrals usually convert several times better than "
-              f"cold applies{r}")
+              f"applying through a portal{r}")
 
     lags = state.response_lags()
     if lags:
@@ -274,7 +295,8 @@ def cmd_list(args) -> None:
     for app in apps[:args.limit]:
         status = app.terminal or app.stage
         print(f"{app.id}  {app.applied_on}  {app.company:<24} "
-              f"{app.role[:26]:<26} {muted}{status} · {app.source}{r}")
+              f"{app.role[:26]:<26} {muted}{status} · "
+              f"{config.SOURCES.get(app.source, app.source)}{r}")
 
 
 def _confirm(question: str, assume_yes: bool) -> bool:
@@ -557,8 +579,10 @@ def build_parser() -> argparse.ArgumentParser:
     a.add_argument("--quick", action="store_true",
                    help="a quick/easy-apply rather than a tailored one")
     a.add_argument("--tailored", action="store_true", help="(default)")
-    a.add_argument("--source", default="cold",
-                   help="cold / referral / recruiter / event (default cold)")
+    a.add_argument("--source", default=None,
+                   help="linkedin / portal / uni / referral / recruiter / "
+                        "event (default: your usual one, from Settings); "
+                        "or add @uni etc. to the name")
     a.add_argument("--url", default="")
     a.add_argument("--note", default="")
     a.add_argument("--date", help="backfill: YYYY-MM-DD")

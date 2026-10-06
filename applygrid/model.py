@@ -247,6 +247,14 @@ def build(raw_events: list[dict], cfg: dict | None = None,
             app.terminal = kind
         else:
             app.touches += 1
+            stage = config.EFFORT_STAGES.get(kind)
+            if stage:
+                idx = config.STAGE_ORDER.index(stage)
+                if idx > app.stage_idx:
+                    app.stage_idx = idx
+                    app.stage = stage
+                if app.first_response_lag is None:
+                    app.first_response_lag = (day - app.applied_on).days
 
     state.daily_points = dict(daily)
     return state

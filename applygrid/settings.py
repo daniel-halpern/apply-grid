@@ -21,6 +21,11 @@ SCHEMES = (
     ("dark", "Dark — brighter green means more"),
 )
 
+# The sources offered as your usual one. "cold" (Other) and "inbound" stay
+# valid in the log, but nobody's default is either.
+USUAL_SOURCES = ("linkedin", "portal", "university", "referral", "recruiter",
+                 "event")
+
 SCALES = (
     ("relative", "Compared with your busiest days — uses every shade"),
     ("target", "Compared with your daily target (darkest at 2× target)"),
@@ -115,6 +120,30 @@ class Settings:
                   text="The menu bar can't be switched off here — quit it "
                        "from its own menu.",
                   foreground="#777").pack(anchor="w")
+
+        log_frame = ttk.LabelFrame(body, text="Logging", padding=12)
+        log_frame.pack(fill="x", pady=(12, 0))
+        ttk.Label(log_frame, text="Where you usually find jobs").pack(anchor="w")
+        usual = tk.StringVar(value=self.cfg.get("default_source", "linkedin"))
+        self.vars["default_source"] = usual
+        for value in USUAL_SOURCES:
+            ttk.Radiobutton(log_frame, text=config.SOURCES[value], value=value,
+                            variable=usual, command=self.apply).pack(
+                anchor="w", padx=(12, 0))
+        ttk.Label(log_frame,
+                  text="Applications count as this unless you add a tag, "
+                       "e.g.  Stripe / SWE @uni",
+                  foreground="#777").pack(anchor="w", pady=(2, 10))
+        ttk.Label(log_frame, text="Show under Log effort").pack(anchor="w")
+        hidden = set(self.cfg.get("hidden_efforts", []))
+        for kind in config.EFFORT_MENU:
+            if kind == "online_assessment":
+                continue        # it has its own menu
+            var = tk.BooleanVar(value=kind not in hidden)
+            self.vars[f"efforts.{kind}"] = var
+            ttk.Checkbutton(log_frame, text=config.KIND_LABELS[kind],
+                            variable=var, command=self.apply).pack(
+                anchor="w", padx=(12, 0))
 
         colours = ttk.LabelFrame(body, text="Colour", padding=12)
         colours.pack(fill="x", pady=(12, 0))
@@ -218,6 +247,10 @@ class Settings:
                 return None
             if name.startswith("surfaces."):
                 values["surfaces"][name.split(".", 1)[1]] = bool(value)
+            elif name.startswith("efforts."):
+                hidden = values.setdefault("hidden_efforts", [])
+                if not value:
+                    hidden.append(name.split(".", 1)[1])
             elif name.startswith("nudges."):
                 key = name.split(".", 1)[1]
                 values.setdefault("nudges", {})[key] = (

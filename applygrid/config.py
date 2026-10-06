@@ -56,13 +56,69 @@ DEFAULTS = {
         "application_quick": 1,
         "referral_ask": 2,
         "cold_outreach": 2,
+        "online_assessment": 3,
         "follow_up": 1,
         "interview": 5,
         "resume_work": 2,
         "prep": 1,
     },
     "gist_id": None,
+    # Where an application came from when you don't say. One of SOURCES.
+    "default_source": "linkedin",
+    # Efforts left out of the menu bar's Log effort list, for things you
+    # never do. They can still be logged from the terminal.
+    "hidden_efforts": [],
 }
+
+# The menu bar's Log effort list, in order. hidden_efforts removes entries.
+EFFORT_MENU = (
+    "online_assessment",
+    "prep",
+    "resume_work",
+    "referral_ask",
+    "cold_outreach",
+    "interview",
+)
+
+# Where an application came from: the key stored in the log, and its label.
+# Drives the "By channel" table in `ja stats`. "cold" is what entries got
+# before sources were recorded properly, so it reads as "Other".
+SOURCES = {
+    "linkedin": "LinkedIn",
+    "portal": "Job portal",
+    "university": "Uni portal",
+    "referral": "Referral",
+    "recruiter": "Recruiter",
+    "event": "Event",
+    "inbound": "Inbound",
+    "cold": "Other",
+}
+
+# @tags accepted when logging, e.g. "Stripe / SWE @uni".
+SOURCE_TAGS = {
+    "linkedin": "linkedin", "li": "linkedin",
+    "portal": "portal", "site": "portal",
+    "uni": "university", "university": "university", "school": "university",
+    "referral": "referral", "ref": "referral",
+    "recruiter": "recruiter",
+    "event": "event", "fair": "event",
+}
+
+
+def parse_source(text: str, default: str) -> tuple[str, str]:
+    """Pull one @tag out of the text: ("Stripe / SWE @uni") -> text, source.
+
+    Unknown @words are left in place rather than silently eaten.
+    """
+    source = default
+    kept = []
+    for word in text.split():
+        tag = word[1:].lower() if word.startswith("@") else None
+        if tag in SOURCE_TAGS:
+            source = SOURCE_TAGS[tag]
+        else:
+            kept.append(word)
+    return " ".join(kept), source
 
 # Effort events carry points and create or touch an application.
 # These two create a new application; the rest attach to an existing one
@@ -80,12 +136,18 @@ STAGE_KINDS = {
 }
 TERMINAL_KINDS = ("rejected", "withdrawn")
 
+# Efforts that also prove the application got a response. Being sent an
+# online assessment means you passed the first filter -- that's a screen --
+# so logging the OA records it, rather than needing a second entry.
+EFFORT_STAGES = {"online_assessment": "screen"}
+
 # Human labels, used by every renderer so the surfaces stay consistent.
 KIND_LABELS = {
     "application_tailored": "Tailored application",
     "application_quick": "Quick application",
     "referral_ask": "Referral ask",
     "cold_outreach": "Cold outreach",
+    "online_assessment": "Online assessment",
     "follow_up": "Follow-up",
     "interview": "Interview",
     "resume_work": "Resume / portfolio work",

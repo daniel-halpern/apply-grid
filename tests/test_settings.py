@@ -276,6 +276,19 @@ class SettingsWindowTest(unittest.TestCase):
         self.win.apply()
         self.assertEqual(self._saved()["color_scheme"], "light")
 
+    def test_usual_source_writes_without_a_save_click(self):
+        self.win.vars["default_source"].set("university")
+        self.win.apply()
+        self.assertEqual(self._saved()["default_source"], "university")
+
+    def test_unticked_efforts_are_hidden(self):
+        self.win.vars["efforts.cold_outreach"].set(False)
+        self.win.apply()
+        self.assertEqual(self._saved()["hidden_efforts"], ["cold_outreach"])
+        self.win.vars["efforts.cold_outreach"].set(True)
+        self.win.apply()
+        self.assertEqual(self._saved()["hidden_efforts"], [])
+
     def test_colour_scale_writes_without_a_save_click(self):
         self.win.vars["color_scale"].set("target")
         self.win.apply()

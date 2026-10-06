@@ -23,13 +23,6 @@ from . import config, events, model, nudge, process, publish, render_menubar
 
 REFRESH_SECONDS = 60
 
-EFFORT_CHOICES = [
-    ("prep", "Interview prep"),
-    ("resume_work", "Resume / portfolio work"),
-    ("referral_ask", "Referral ask"),
-    ("cold_outreach", "Cold outreach"),
-    ("interview", "Interview"),
-]
 
 
 class ApplyGrid(rumps.App):
@@ -104,10 +97,30 @@ class ApplyGrid(rumps.App):
         items.append(rumps.MenuItem("Log quick application…",
                                     callback=self.log_quick))
 
+        # Its own list of applications, because an OA always belongs to one:
+        # one click logs the effort and marks that application screened.
+        weights = self.state.cfg["weights"]
+        oa = rumps.MenuItem(
+            f"Log online assessment  +{weights.get('online_assessment', 0)}")
+        waiting = sorted((a for a in self.state.apps.values() if a.is_live),
+                         key=lambda a: a.applied_on, reverse=True)
+        for app in waiting[:15]:
+            label = app.company + (f" / {app.role}" if app.role else "")
+            oa.add(rumps.MenuItem(
+                label, callback=self._effort_cb("online_assessment", app.id)))
+        if waiting:
+            oa.add(rumps.separator)
+        oa.add(rumps.MenuItem("Not one of these",
+                              callback=self._effort_cb("online_assessment")))
+        items.append(oa)
+
         effort = rumps.MenuItem("Log effort")
-        for kind, label in EFFORT_CHOICES:
+        hidden = set(self.state.cfg.get("hidden_efforts", []))
+        for kind in config.EFFORT_MENU:
+            if kind in hidden or kind == "online_assessment":
+                continue
             effort.add(rumps.MenuItem(
-                f"{label}  +{self.state.cfg['weights'].get(kind, 0)}",
+                f"{config.KIND_LABELS[kind]}  +{weights.get(kind, 0)}",
                 callback=self._effort_cb(kind)))
         items.append(effort)
 
@@ -196,18 +209,18 @@ class ApplyGrid(rumps.App):
         return response.text.strip() if response.clicked else None
 
     def _log_application(self, kind: str) -> None:
+        default = self.state.cfg.get("default_source", "linkedin")
+        if default not in config.SOURCES:
+            default = "linkedin"
         raw = self._ask(
             "Log an application",
-            "Company / Role\n\nAdd  @referral,  @recruiter  or  @event "
-            "to mark how you found it.",
+            "Company / Role\n\n"
+            f"Counts as {config.SOURCES[default]} unless you add  @linkedin,  "
+            "@portal,  @uni,  @referral  or  @recruiter.",
             "")
         if not raw:
             return
-        source = "cold"
-        for tag in ("referral", "recruiter", "event"):
-            if f"@{tag}" in raw.lower():
-                source = tag
-                raw = raw.replace(f"@{tag}", "").replace(f"@{tag.title()}", "")
+        raw, source = config.parse_source(raw, default)
         company, _, role = raw.partition("/")
         company = company.strip()
         if not company:
@@ -237,9 +250,12 @@ class ApplyGrid(rumps.App):
     def log_quick(self, _) -> None:
         self._log_application("application_quick")
 
-    def _effort_cb(self, kind: str):
+    def _effort_cb(self, kind: str, app_id: str | None = None):
         def cb(_):
-            events.append({"ts": events.now_iso(), "kind": kind})
+            event = {"ts": events.now_iso(), "kind": kind}
+            if app_id:
+                event["app_id"] = app_id
+            events.append(event)
             self._refresh()
             self._sync_async()
         return cb

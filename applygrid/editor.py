@@ -18,7 +18,7 @@ from . import background, config, events, model, publish, window
 
 # Editable in the form; id and app_id are shown read-only because changing them
 # would silently orphan an application's outcome events.
-SOURCES = ("cold", "referral", "recruiter", "event", "inbound")
+SOURCES = tuple(config.SOURCES)
 COLUMNS = (
     ("when", "When", 150),
     ("kind", "Kind", 175),

@@ -9,6 +9,7 @@
     "application_quick": 1,
     "referral_ask": 2,
     "cold_outreach": 2,
+    "online_assessment": 3,
     "follow_up": 1,
     "interview": 5,
     "resume_work": 2,
