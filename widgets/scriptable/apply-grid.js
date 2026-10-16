@@ -174,7 +174,28 @@ function drawGrid(rawData, weeks, cell, gap, sch, mono, offsetWeeks) {
   return ctx.getImage();
 }
 
-function addRow(widget, sch, data, stale) {
+function asOf(data) {
+  const when = new Date(data.today + "T12:00:00");
+  const month = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                 "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][when.getMonth()];
+  return `as of ${when.getDate()} ${month}`;
+}
+
+// The small widget is about 132pt across. One row holding today's points,
+// the streak and anything else ran past that, and iOS cut the end off -- so
+// small puts today on top and the rest on its own line under the grid.
+function addSmallFooter(widget, sch, data, stale) {
+  const bits = [`${data.applied} applied`];
+  bits.push(driftDays(data) ? asOf(data) : `${data.streak_days}d streak`);
+  if (stale) bits.push("offline");
+  const line = widget.addText(bits.join(" \u00B7 "));
+  line.font = Font.systemFont(11);
+  line.textColor = new Color(sch.muted);
+  line.lineLimit = 1;
+  line.minimumScaleFactor = 0.75;   // shrink a little rather than truncate
+}
+
+function addRow(widget, sch, data, stale, compact) {
   const row = widget.addStack();
   row.centerAlignContent();
 
@@ -190,20 +211,18 @@ function addRow(widget, sch, data, stale) {
   of.textColor = new Color(sch.muted);
 
   row.addSpacer();
+  if (compact) return;              // the rest goes under the grid
 
   const bits = [];
   if (!drift) bits.push(`${data.streak_days}d`);
   if (data.stale) bits.push(`${data.stale} to chase`);
-  if (drift) {
-    const when = new Date(data.today + "T12:00:00");
-    const month = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
-                   "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][when.getMonth()];
-    bits.push(`as of ${when.getDate()} ${month}`);
-  }
+  if (drift) bits.push(asOf(data));
   if (stale) bits.push("offline");
   const meta = row.addText(bits.join("  \u00B7  "));
   meta.font = Font.systemFont(11);
   meta.textColor = new Color(sch.muted);
+  meta.lineLimit = 1;
+  meta.minimumScaleFactor = 0.75;
 }
 
 function addFunnel(widget, sch, data) {
@@ -241,7 +260,7 @@ function addStats(widget, sch, data) {
     `${data.active} active`,
   ];
   if (data.stale) bits.push(`${data.stale} to chase`);
-  const line = widget.addText(bits.join("  \u00B7  "));
+  const line = widget.addText(bits.join(" \u00B7 "));
   line.font = Font.systemFont(11);
   line.textColor = new Color(sch.muted);
 }
@@ -302,7 +321,8 @@ async function build() {
     return widget;
   }
 
-  addRow(widget, sch, data, stale);
+  const small = family === "small";
+  addRow(widget, sch, data, stale, small);
 
   const addGrid = (offsetWeeks) => {
     const img = widget.addImage(drawGrid(
@@ -325,10 +345,13 @@ async function build() {
     return widget;
   }
 
-  widget.addSpacer(8);
+  widget.addSpacer(small ? 6 : 8);
   addGrid(0);
 
-  if (family !== "small") {
+  if (small) {
+    widget.addSpacer(6);
+    addSmallFooter(widget, sch, data, stale);
+  } else {
     widget.addSpacer(8);
     addFunnel(widget, sch, data);
   }

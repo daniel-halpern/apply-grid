@@ -82,6 +82,7 @@ for (const family of families) {
       continue;
     }
     console.log(`  OK   ${family.padEnd(21)} cells=${String(drawn).padStart(4)} images=${images} texts=${texts.length}`);
+    console.log(`TEXTS ${family} ${JSON.stringify(texts)}`);
   } catch (err) {
     failures++;
     console.log(`  FAIL ${family.padEnd(21)} ${err.message}`);

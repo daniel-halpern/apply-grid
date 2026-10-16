@@ -59,6 +59,47 @@ class WidgetFamilyTest(unittest.TestCase):
                        "accessoryCircular", "accessoryInline"):
             self.assertIn(family, proc.stdout)
 
+    def _texts(self, payload: dict) -> dict[str, list[str]]:
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("node is not installed")
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "payload.json"
+            path.write_text(json.dumps(payload))
+            proc = subprocess.run([node, str(HARNESS), str(WIDGET), str(path)],
+                                  capture_output=True, text=True, cwd=ROOT)
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        out = {}
+        for line in proc.stdout.splitlines():
+            if line.startswith("TEXTS "):
+                _, family, blob = line.split(" ", 2)
+                out[family] = json.loads(blob)
+        return out
+
+    def test_small_shows_applied_and_streak(self):
+        """Issue #1: on the small widget neither number was visible."""
+        payload = sample_payload()
+        payload.update(today=date.today().isoformat(), applied=128,
+                       streak_days=14, stale=0)
+        payload["start"] = (date.today() - timedelta(days=370)).isoformat()
+        small = self._texts(payload)["small"]
+        footer = small[-1]
+        self.assertIn("128 applied", footer)
+        self.assertIn("14d streak", footer)
+        # Rough SF Pro widths at 11pt; the small widget is ~132pt across.
+        width = sum(6.6 if c.isdigit() else 3.1 if c in " ·" else 5.6
+                    for c in footer)
+        self.assertLess(width, 132, f"{footer!r} is ~{width:.0f}pt")
+
+    def test_small_top_row_is_only_today(self):
+        """The row that overflowed holds nothing but today's points now."""
+        payload = sample_payload()
+        payload["today"] = date.today().isoformat()
+        payload["start"] = (date.today() - timedelta(days=370)).isoformat()
+        small = self._texts(payload)["small"]
+        self.assertEqual(small[:2], ["4", "/3 today"])
+        self.assertEqual(len(small), 3)
+
     def test_geometry_fits_inside_every_box(self):
         """An oversized image gets scaled down and reads as too small."""
         import re
