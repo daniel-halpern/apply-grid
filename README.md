@@ -12,14 +12,14 @@ Mon █████████████████████████�
 Wed ██████████████████████████████████
     ...
     Less ▁▂▄▆█ More          target 3 pts/day
-    4/3 today · 12d streak · 78 applied · 14 screens · 1 offer · 6 to follow up
+    4/3 today · 12d streak · 78 applied · 14 screens · 1 offer
 ```
 
 In the menu bar it's one line: the last seven days, today's points against
-your target, your streak, and how many applications are owed a follow-up.
+your target, and your streak.
 
 ```
-▁▂▁█▄▁▆ 4/3 ·12d ·6↻
+▁▂▁█▄▁▆ 4/3 ·12d
 ```
 
 ## What a square means
@@ -101,8 +101,6 @@ Click the menu bar item:
   that application as screened. No second entry needed.
 - **Log effort**: prep, resume work, a referral ask, an interview. Hide the
   ones you never do in Settings.
-- **Follow up on**: applications that have gone quiet. Click one to log the
-  follow-up.
 - **Record an outcome…**: a screen, an onsite, an offer, a rejection.
 - **What did I do on…**: the question a green square makes you ask. Pick a day
   to see exactly what you logged.
@@ -129,7 +127,7 @@ ja event screen --app stripe        # an outcome, matched by company
 ja event followup --app 7b77        # ...or by id
 ja on 2026-09-01                    # what you did that day
 ja stats                            # funnel, streaks, channels, response lag
-ja stale                            # who's owed a follow-up
+ja stale                            # who's owed a follow-up (if reminders are on)
 ja list                             # every application
 ja edit                             # the editor window
 ```
@@ -168,7 +166,10 @@ button.
   sync independently.
 - **Logging**: where you usually find jobs (LinkedIn, a job portal, your
   uni's portal, ...), so most entries need no tag, and which efforts appear
-  under Log effort.
+  under Log effort. Also where you turn on **follow-up reminders**, off by
+  default: they list applications that have gone quiet, which is useful when
+  there's someone to write to, like a recruiter or a company that's
+  interviewed you, and noise for portal applications nobody reads.
 - **Colour**: shade against your busy days or against your daily target, and
   light, dark or follow-the-system colours. In light mode darker green means
   more; in dark mode, as on GitHub, brighter green does.
@@ -192,8 +193,9 @@ which is getting ignored and then muted:
   target it stays silent, so on a good week you get none at all.
 - **It has a budget:** at most one a day and three a week, and only between
   6 and 9pm by default.
-- **It tells you something you don't already know**: a named application
-  that's owed a follow-up, a streak about to break, a week within reach. It
+- **It tells you something you don't already know**: a streak about to
+  break, a week within reach, or, with follow-up reminders on, a named
+  application that's gone quiet. It
   doesn't repeat the same kind of message twice running.
 - **It backs off.** Ignore three in a row and it pauses for a week.
 - **It never guilts you.** No "you did nothing today."

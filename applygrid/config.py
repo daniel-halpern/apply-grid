@@ -65,6 +65,13 @@ DEFAULTS = {
     "gist_id": None,
     # Where an application came from when you don't say. One of SOURCES.
     "default_source": "linkedin",
+    # Reminders to chase applications that have gone quiet. Off by default:
+    # a follow-up only works when there's a person to send it to (a
+    # recruiter, a referrer, a company that's interviewed you), and most
+    # applications go through portals where nobody reads one. Left on, the
+    # list fills with applications you'll never chase, and the count beside
+    # the clock becomes a number you learn to ignore.
+    "follow_ups": False,
     # Efforts left out of the menu bar's Log effort list, for things you
     # never do. They can still be logged from the terminal.
     "hidden_efforts": [],

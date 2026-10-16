@@ -20,6 +20,7 @@ CFG = {
     "weekly_target_multiplier": 4,
     "stale_after_days": 10,
     "give_up_after_days": 45,
+    "follow_ups": True,          # these tests exercise the reminders
     "weights": config.DEFAULTS["weights"],
 }
 
@@ -302,3 +303,27 @@ class RelativeScaleTest(unittest.TestCase):
     def test_target_setting_keeps_the_old_scale(self):
         state = self._state({0: 3}, scale="target")
         self.assertEqual(state.level(3), model.bucket(3, 3))
+
+
+class FollowUpsOffTest(unittest.TestCase):
+    """Off by default: most applications have nobody to follow up with."""
+
+    def _state(self, cfg):
+        return model.build([
+            {"id": "a1", "ts": ts(days_ago(14)), "kind": "application_quick",
+             "company": "Ramp", "role": "SWE"},
+        ], cfg, TODAY)
+
+    def test_default_lists_nothing_anywhere(self):
+        from applygrid import render_menubar, publish
+        cfg = dict(config.DEFAULTS, weights=config.DEFAULTS["weights"])
+        state = self._state(cfg)
+        self.assertFalse(config.DEFAULTS["follow_ups"])
+        self.assertEqual(state.stale(), [])
+        self.assertNotIn("↻", render_menubar.title(state))
+        self.assertEqual(publish.payload(state)["stale"], 0)
+
+    def test_turning_it_on_brings_them_back(self):
+        cfg = dict(config.DEFAULTS, weights=config.DEFAULTS["weights"],
+                   follow_ups=True)
+        self.assertEqual([a.id for a in self._state(cfg).stale()], ["a1"])

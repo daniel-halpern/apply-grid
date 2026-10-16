@@ -134,6 +134,17 @@ class Settings:
                   text="Applications count as this unless you add a tag, "
                        "e.g.  Stripe / SWE @uni",
                   foreground="#777").pack(anchor="w", pady=(2, 10))
+        follow = tk.BooleanVar(value=bool(self.cfg.get("follow_ups", False)))
+        self.vars["follow_ups"] = follow
+        ttk.Checkbutton(log_frame,
+                        text="Remind me to follow up on quiet applications",
+                        variable=follow, command=self.apply).pack(anchor="w")
+        ttk.Label(log_frame,
+                  text="Worth it when there's someone to write to — a "
+                       "recruiter, a referral,\na company that's interviewed "
+                       "you. Not for portal applications.",
+                  foreground="#777", justify="left").pack(anchor="w",
+                                                          pady=(0, 10))
         ttk.Label(log_frame, text="Show under Log effort").pack(anchor="w")
         hidden = set(self.cfg.get("hidden_efforts", []))
         for kind in config.EFFORT_MENU:

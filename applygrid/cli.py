@@ -272,6 +272,10 @@ def _recent_interview_lags(state: model.State, limit: int = 3) -> list[int]:
 
 def cmd_stale(args) -> None:
     state = load_state()
+    if not state.cfg.get("follow_ups", False):
+        print("follow-up reminders are off — turn them on in Settings > "
+              "Logging if you chase applications")
+        return
     rows = state.stale(args.days)
     if not rows:
         print("nothing owed a follow-up — pipeline is current")

@@ -27,6 +27,7 @@ CFG = {
     "weekly_target_multiplier": 4,
     "stale_after_days": 10,
     "give_up_after_days": 45,
+    "follow_ups": True,          # these tests exercise the reminders
     "week_anchor": "today",
     "color_scheme": "auto",
     "weights": config.DEFAULTS["weights"],

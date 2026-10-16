@@ -144,18 +144,19 @@ class ApplyGrid(rumps.App):
                 callback=self._effort_cb(kind)))
         items.append(effort)
 
-        stale = self.state.stale()
-        follow = rumps.MenuItem(f"Follow up on ({len(stale)})" if stale
-                                else "Follow up on")
-        if stale:
-            for app in stale[:12]:
-                quiet = app.days_since_last_event(self.state.today)
-                follow.add(rumps.MenuItem(
-                    f"{app.company} — {quiet}d quiet",
-                    callback=self._followup_cb(app.id)))
-        else:
-            follow.add(rumps.MenuItem("nothing owed right now"))
-        items.append(follow)
+        if self.state.cfg.get("follow_ups", False):
+            stale = self.state.stale()
+            follow = rumps.MenuItem(f"Follow up on ({len(stale)})" if stale
+                                    else "Follow up on")
+            if stale:
+                for app in stale[:12]:
+                    quiet = app.days_since_last_event(self.state.today)
+                    follow.add(rumps.MenuItem(
+                        f"{app.company} — {quiet}d quiet",
+                        callback=self._followup_cb(app.id)))
+            else:
+                follow.add(rumps.MenuItem("nothing owed right now"))
+            items.append(follow)
 
         items.append(rumps.MenuItem("Record an outcome…",
                                     callback=self.record_outcome))

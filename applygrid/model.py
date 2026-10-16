@@ -157,6 +157,8 @@ class State:
         long is a wall of guilt you stop reading rather than a list of next
         actions. Past give_up_after_days it's cold, not owed a follow-up.
         """
+        if not self.cfg.get("follow_ups", False):
+            return []        # reminders are off; see config.DEFAULTS
         low = days if days is not None else self.cfg["stale_after_days"]
         high = self.cfg["give_up_after_days"]
         out = [a for a in self.live_apps
